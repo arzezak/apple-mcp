@@ -1,6 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, parseList, esc, textResult } from "./osascript.ts";
+import {
+  runAppleScript,
+  parseList,
+  esc,
+  textResult,
+  appleScriptDateLiteral,
+} from "./osascript.ts";
 
 export function registerRemindersTools(server: McpServer) {
   server.registerTool(
@@ -90,7 +96,7 @@ end tell`;
     async ({ listName, name, notes, dueDate, priority }) => {
       const props: string[] = [`name:"${esc(name)}"`];
       if (notes) props.push(`body:"${esc(notes)}"`);
-      if (dueDate) props.push(`due date:date "${esc(dueDate)}"`);
+      if (dueDate) props.push(`due date:${appleScriptDateLiteral(dueDate)}`);
       if (priority !== undefined) props.push(`priority:${priority}`);
 
       const script = `tell application "Reminders" to tell list "${esc(listName)}" to make new reminder with properties {${props.join(", ")}}`;

@@ -35,6 +35,61 @@ tell application "Calendar"
 end tell`;
 }
 
+export function calendarCreateEventScript({
+  calendar,
+  title,
+  daysFromNow,
+  hour,
+  minute,
+  durationMinutes,
+  location,
+  notes,
+  allDay,
+}: {
+  calendar: string;
+  title: string;
+  daysFromNow: number;
+  hour: number;
+  minute: number;
+  durationMinutes: number;
+  location?: string;
+  notes?: string;
+  allDay: boolean;
+}): string {
+  const props: string[] = [`summary:"${esc(title)}"`];
+  if (location) props.push(`location:"${esc(location)}"`);
+  if (notes) props.push(`description:"${esc(notes)}"`);
+
+  if (allDay) {
+    props.push("allday event:true");
+    return `
+set theDate to current date
+set theDate to theDate + (${daysFromNow} * days)
+set hours of theDate to 0
+set minutes of theDate to 0
+set seconds of theDate to 0
+set theEnd to theDate + days
+tell application "Calendar"
+  tell calendar "${esc(calendar)}"
+    make new event with properties {start date:theDate, end date:theEnd, ${props.join(", ")}}
+  end tell
+end tell`;
+  }
+
+  return `
+set theStart to current date
+set theStart to theStart + (${daysFromNow} * days)
+set hours of theStart to ${hour}
+set minutes of theStart to ${minute}
+set seconds of theStart to 0
+set theEnd to theStart + (${durationMinutes} * minutes)
+tell application "Calendar"
+  tell calendar "${esc(calendar)}"
+    make new event with properties {start date:theStart, end date:theEnd, ${props.join(", ")}}
+  end tell
+end tell`;
+}
+
 export function registerCalendarTools(server: McpServer) {
   server.registerTool(
     "calendar_list_calendars",
@@ -126,38 +181,17 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
       notes,
       allDay,
     }) => {
-      const props: string[] = [`summary:"${esc(title)}"`];
-      if (location) props.push(`location:"${esc(location)}"`);
-      if (notes) props.push(`description:"${esc(notes)}"`);
-
-      let script: string;
-      if (allDay) {
-        props.push("allday event:true");
-        script = `
-set theDate to current date
-set theDate to theDate + (${daysFromNow} * days)
-set hours of theDate to 0
-set minutes of theDate to 0
-set seconds of theDate to 0
-tell application "Calendar"
-  tell calendar "${esc(calendar)}"
-    make new event with properties {start date:theDate, ${props.join(", ")}}
-  end tell
-end tell`;
-      } else {
-        script = `
-set theStart to current date
-set theStart to theStart + (${daysFromNow} * days)
-set hours of theStart to ${hour}
-set minutes of theStart to ${minute}
-set seconds of theStart to 0
-set theEnd to theStart + (${durationMinutes} * minutes)
-tell application "Calendar"
-  tell calendar "${esc(calendar)}"
-    make new event with properties {start date:theStart, end date:theEnd, ${props.join(", ")}}
-  end tell
-end tell`;
-      }
+      const script = calendarCreateEventScript({
+        calendar,
+        title,
+        daysFromNow,
+        hour,
+        minute,
+        durationMinutes,
+        location,
+        notes,
+        allDay,
+      });
 
       await runAppleScript(script);
       return textResult(`Created event "${title}" on calendar "${calendar}".`);
