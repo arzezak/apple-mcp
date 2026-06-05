@@ -1,6 +1,32 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runAppleScript, parseList, esc, textResult } from "./osascript.ts";
+import { markdownToHtml } from "./markdown.ts";
+
+function buildFolderListScript(folder: string): string {
+  return `
+tell application "Notes"
+  set output to ""
+  repeat with n in (every note in folder "${esc(folder)}")
+    set output to output & name of n & " | folder: ${esc(folder)}" & " | modified: " & (modification date of n as text) & linefeed
+  end repeat
+  output
+end tell`;
+}
+
+function buildAllNotesListScript(): string {
+  return `
+tell application "Notes"
+  set output to ""
+  repeat with f in every folder
+    set folderName to name of f
+    repeat with n in every note of f
+      set output to output & name of n & " | folder: " & folderName & " | modified: " & (modification date of n as text) & linefeed
+    end repeat
+  end repeat
+  output
+end tell`;
+}
 
 export function registerNotesTools(server: McpServer) {
   // ── List folders ─────────────────────────────────────────────────────
@@ -33,18 +59,9 @@ export function registerNotesTools(server: McpServer) {
       },
     },
     async ({ folder }) => {
-      const scope = folder
-        ? `every note in folder "${esc(folder)}"`
-        : "every note";
-      const script = `
-tell application "Notes"
-  set output to ""
-  repeat with n in (${scope})
-    set folderName to name of (container of n)
-    set output to output & name of n & " | folder: " & folderName & " | modified: " & (modification date of n as text) & linefeed
-  end repeat
-  output
-end tell`;
+      const script = folder
+        ? buildFolderListScript(folder)
+        : buildAllNotesListScript();
       const raw = await runAppleScript(script);
       return textResult(raw || "No notes found.");
     }
@@ -56,13 +73,13 @@ end tell`;
     {
       title: "Read Note",
       description:
-        "Read the content of a note by its exact name. Returns plain text by default.",
+        "Read the content of a note by its exact name. Returns HTML by default to preserve formatting.",
       inputSchema: {
         name: z.string().describe("Exact name of the note"),
         html: z
           .boolean()
-          .default(false)
-          .describe("Return raw HTML instead of plain text"),
+          .default(true)
+          .describe("Return HTML (default) or plain text"),
       },
     },
     async ({ name, html }) => {
@@ -79,10 +96,10 @@ end tell`;
     {
       title: "Create Note",
       description:
-        "Create a new note in Apple Notes. Body can be plain text or HTML.",
+        "Create a new note in Apple Notes. Body supports markdown (headings, lists, bold, checkboxes) which is auto-converted to formatted HTML.",
       inputSchema: {
         title: z.string().describe("Note title"),
-        body: z.string().describe("Note body (plain text or HTML)"),
+        body: z.string().describe("Note body. Supports markdown: # headings, - bullets, 1. numbered, **bold**, - [ ] checkboxes. HTML also accepted."),
         folder: z
           .string()
           .optional()
@@ -90,10 +107,11 @@ end tell`;
       },
     },
     async ({ title, body, folder }) => {
+      const htmlBody = markdownToHtml(body);
       const target = folder
         ? `tell folder "${esc(folder)}" to `
         : "";
-      const script = `tell application "Notes" to ${target}make new note with properties {name:"${esc(title)}", body:"${esc(body)}"}`;
+      const script = `tell application "Notes" to ${target}make new note with properties {name:"${esc(title)}", body:"${esc(htmlBody)}"}`;
       await runAppleScript(script);
       return textResult(`Created note "${title}"${folder ? ` in folder "${folder}"` : ""}.`);
     }
@@ -144,6 +162,38 @@ end tell`;
       const script = `tell application "Notes" to move (first note whose name is "${esc(name)}") to folder "${esc(targetFolder)}"`;
       await runAppleScript(script);
       return textResult(`Moved note "${name}" to folder "${targetFolder}".`);
+    }
+  );
+
+  // ── Edit a note ──────────────────────────────────────────────────────
+  server.registerTool(
+    "notes_edit",
+    {
+      title: "Edit Note",
+      description:
+        "Update a note's title, body, or both. Finds the note by its exact current name.",
+      inputSchema: {
+        name: z.string().describe("Exact current name of the note"),
+        title: z
+          .string()
+          .optional()
+          .describe("New title for the note"),
+        body: z
+          .string()
+          .optional()
+          .describe("New body content. Supports markdown: # headings, - bullets, 1. numbered, **bold**, - [ ] checkboxes. HTML also accepted."),
+      },
+    },
+    async ({ name, title, body }) => {
+      if (!title && !body) {
+        return textResult("Nothing to update. Provide a title, body, or both.");
+      }
+      const lines = [`tell application "Notes"`, `  set n to first note whose name is "${esc(name)}"`];
+      if (body !== undefined) lines.push(`  set body of n to "${esc(markdownToHtml(body))}"`);
+      if (title !== undefined) lines.push(`  set name of n to "${esc(title)}"`);
+      lines.push("end tell");
+      await runAppleScript(lines.join("\n"));
+      return textResult(`Updated note "${name}".`);
     }
   );
 

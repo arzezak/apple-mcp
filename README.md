@@ -4,13 +4,17 @@ MCP server for Apple Reminders, Notes, and Calendar via AppleScript.
 
 Requires [Bun](https://bun.sh) and macOS.
 
-## Tools (18 total)
+## Tools (19 total)
 
 **Reminders:** `reminders_list_lists`, `reminders_list`, `reminders_create`, `reminders_complete`, `reminders_delete`, `reminders_search`
 
-**Notes:** `notes_list_folders`, `notes_list`, `notes_read`, `notes_create`, `notes_search`, `notes_move`, `notes_delete`
+**Notes:** `notes_list_folders`, `notes_list`, `notes_read`, `notes_create`, `notes_edit`, `notes_search`, `notes_move`, `notes_delete`
 
 **Calendar:** `calendar_list_calendars`, `calendar_list_events`, `calendar_create_event`, `calendar_search_events`, `calendar_delete_event`
+
+## Notes formatting
+
+`notes_create` and `notes_edit` accept markdown in the body, which is auto-converted to formatted HTML for Apple Notes. Supported syntax: `#` headings, `- ` bullet lists, `1.` numbered lists, `**bold**`, `*italic*`, `> ` blockquotes, and `- [ ]`/`- [x]` checkboxes. Existing HTML is passed through unchanged.
 
 ## How it works
 
