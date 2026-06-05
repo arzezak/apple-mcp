@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, runAppleScriptMultiline, parseList } from "./osascript.js";
+import { runAppleScript, parseList, esc, textResult } from "./osascript.js";
 
 export function registerRemindersTools(server: McpServer) {
   // ── List all reminder lists ──────────────────────────────────────────
@@ -14,10 +14,7 @@ export function registerRemindersTools(server: McpServer) {
       const raw = await runAppleScript(
         'tell application "Reminders" to name of every list'
       );
-      const lists = parseList(raw);
-      return {
-        content: [{ type: "text", text: JSON.stringify(lists, null, 2) }],
-      };
+      return textResult(JSON.stringify(parseList(raw), null, 2));
     }
   );
 
@@ -62,8 +59,8 @@ tell application "Reminders"
   end repeat
   output
 end tell`;
-      const raw = await runAppleScriptMultiline(script);
-      return { content: [{ type: "text", text: raw || "No reminders found." }] };
+      const raw = await runAppleScript(script);
+      return textResult(raw || "No reminders found.");
     }
   );
 
@@ -99,11 +96,7 @@ end tell`;
 
       const script = `tell application "Reminders" to tell list "${esc(listName)}" to make new reminder with properties {${props.join(", ")}}`;
       await runAppleScript(script);
-      return {
-        content: [
-          { type: "text", text: `Created reminder "${name}" in list "${listName}".` },
-        ],
-      };
+      return textResult(`Created reminder "${name}" in list "${listName}".`);
     }
   );
 
@@ -121,9 +114,7 @@ end tell`;
     async ({ listName, name }) => {
       const script = `tell application "Reminders" to tell list "${esc(listName)}" to set completed of (first reminder whose name is "${esc(name)}") to true`;
       await runAppleScript(script);
-      return {
-        content: [{ type: "text", text: `Completed reminder "${name}".` }],
-      };
+      return textResult(`Completed reminder "${name}".`);
     }
   );
 
@@ -141,9 +132,7 @@ end tell`;
     async ({ listName, name }) => {
       const script = `tell application "Reminders" to delete (first reminder of list "${esc(listName)}" whose name is "${esc(name)}")`;
       await runAppleScript(script);
-      return {
-        content: [{ type: "text", text: `Deleted reminder "${name}".` }],
-      };
+      return textResult(`Deleted reminder "${name}".`);
     }
   );
 
@@ -168,15 +157,7 @@ end tell`;
         : `whose name contains "${esc(query)}" and completed is false`;
       const script = `tell application "Reminders" to name of (every reminder ${filter})`;
       const raw = await runAppleScript(script);
-      const results = parseList(raw);
-      return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
-      };
+      return textResult(JSON.stringify(parseList(raw), null, 2));
     }
   );
-}
-
-/** Escape double quotes for AppleScript strings */
-function esc(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

@@ -1,6 +1,39 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, runAppleScriptMultiline, parseList } from "./osascript.js";
+import { runAppleScript, parseList, esc, textResult } from "./osascript.js";
+
+function eventQueryScript(
+  calScope: string | null,
+  dateSetup: string,
+  eventFilter: string,
+): string {
+  const outputLine = calScope
+    ? `summary of e & " | " & (start date of e as text) & " → " & (end date of e as text)`
+    : `name of cal & ": " & summary of e & " | " & (start date of e as text) & " → " & (end date of e as text)`;
+
+  const body = calScope
+    ? `tell ${calScope}
+    set evts to (every event ${eventFilter})
+    repeat with e in evts
+      set output to output & ${outputLine} & linefeed
+    end repeat
+  end tell`
+    : `repeat with cal in every calendar
+    set evts to (every event of cal ${eventFilter})
+    repeat with e in evts
+      set output to output & ${outputLine} & linefeed
+    end repeat
+  end repeat`;
+
+  return `
+${dateSetup}
+
+tell application "Calendar"
+  set output to ""
+  ${body}
+  output
+end tell`;
+}
 
 export function registerCalendarTools(server: McpServer) {
   // ── List calendars ───────────────────────────────────────────────────
@@ -14,10 +47,7 @@ export function registerCalendarTools(server: McpServer) {
       const raw = await runAppleScript(
         'tell application "Calendar" to name of every calendar'
       );
-      const calendars = parseList(raw);
-      return {
-        content: [{ type: "text", text: JSON.stringify(calendars, null, 2) }],
-      };
+      return textResult(JSON.stringify(parseList(raw), null, 2));
     }
   );
 
@@ -44,39 +74,16 @@ export function registerCalendarTools(server: McpServer) {
       },
     },
     async ({ calendar, daysAhead, daysBack }) => {
-      const calScope = calendar
-        ? `calendar "${esc(calendar)}"`
-        : null;
-
-      const script = `
-set theStart to current date
-set hours of theStart to 0
-set minutes of theStart to 0
-set seconds of theStart to 0
-set theStart to theStart - (${daysBack} * days)
-set theEnd to (current date) - (hours of (current date)) * hours - (minutes of (current date)) * minutes - (seconds of (current date)) * seconds + (${daysAhead} * days) - 1
-
-tell application "Calendar"
-  set output to ""
-  ${
-    calScope
-      ? `tell ${calScope}
-    set evts to (every event whose start date is greater than or equal to theStart and start date is less than or equal to theEnd)
-    repeat with e in evts
-      set output to output & summary of e & " | " & (start date of e as text) & " → " & (end date of e as text) & linefeed
-    end repeat
-  end tell`
-      : `repeat with cal in every calendar
-    set evts to (every event of cal whose start date is greater than or equal to theStart and start date is less than or equal to theEnd)
-    repeat with e in evts
-      set output to output & name of cal & ": " & summary of e & " | " & (start date of e as text) & " → " & (end date of e as text) & linefeed
-    end repeat
-  end repeat`
-  }
-  output
-end tell`;
-      const raw = await runAppleScriptMultiline(script);
-      return { content: [{ type: "text", text: raw || "No events found." }] };
+      const calScope = calendar ? `calendar "${esc(calendar)}"` : null;
+      const dateSetup = `set midnight to current date
+set hours of midnight to 0
+set minutes of midnight to 0
+set seconds of midnight to 0
+set theStart to midnight - (${daysBack} * days)
+set theEnd to midnight + (${daysAhead} * days) - 1`;
+      const eventFilter = `whose start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
+      const raw = await runAppleScript(eventQueryScript(calScope, dateSetup, eventFilter));
+      return textResult(raw || "No events found.");
     }
   );
 
@@ -151,15 +158,8 @@ tell application "Calendar"
 end tell`;
       }
 
-      await runAppleScriptMultiline(script);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Created event "${title}" on calendar "${calendar}".`,
-          },
-        ],
-      };
+      await runAppleScript(script);
+      return textResult(`Created event "${title}" on calendar "${calendar}".`);
     }
   );
 
@@ -183,38 +183,15 @@ end tell`;
       },
     },
     async ({ query, calendar, daysAhead }) => {
-      const calScope = calendar
-        ? `calendar "${esc(calendar)}"`
-        : null;
-
-      const script = `
-set theStart to current date
+      const calScope = calendar ? `calendar "${esc(calendar)}"` : null;
+      const dateSetup = `set theStart to current date
 set hours of theStart to 0
 set minutes of theStart to 0
 set seconds of theStart to 0
-set theEnd to theStart + (${daysAhead} * days)
-
-tell application "Calendar"
-  set output to ""
-  ${
-    calScope
-      ? `tell ${calScope}
-    set evts to (every event whose summary contains "${esc(query)}" and start date is greater than or equal to theStart and start date is less than or equal to theEnd)
-    repeat with e in evts
-      set output to output & summary of e & " | " & (start date of e as text) & " → " & (end date of e as text) & linefeed
-    end repeat
-  end tell`
-      : `repeat with cal in every calendar
-    set evts to (every event of cal whose summary contains "${esc(query)}" and start date is greater than or equal to theStart and start date is less than or equal to theEnd)
-    repeat with e in evts
-      set output to output & name of cal & ": " & summary of e & " | " & (start date of e as text) & " → " & (end date of e as text) & linefeed
-    end repeat
-  end repeat`
-  }
-  output
-end tell`;
-      const raw = await runAppleScriptMultiline(script);
-      return { content: [{ type: "text", text: raw || "No events found." }] };
+set theEnd to theStart + (${daysAhead} * days)`;
+      const eventFilter = `whose summary contains "${esc(query)}" and start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
+      const raw = await runAppleScript(eventQueryScript(calScope, dateSetup, eventFilter));
+      return textResult(raw || "No events found.");
     }
   );
 
@@ -233,13 +210,7 @@ end tell`;
     async ({ calendar, title }) => {
       const script = `tell application "Calendar" to tell calendar "${esc(calendar)}" to delete (first event whose summary is "${esc(title)}")`;
       await runAppleScript(script);
-      return {
-        content: [{ type: "text", text: `Deleted event "${title}".` }],
-      };
+      return textResult(`Deleted event "${title}".`);
     }
   );
-}
-
-function esc(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, runAppleScriptMultiline, parseList } from "./osascript.js";
+import { runAppleScript, parseList, esc, textResult } from "./osascript.js";
 
 export function registerNotesTools(server: McpServer) {
   // ── List folders ─────────────────────────────────────────────────────
@@ -14,10 +14,7 @@ export function registerNotesTools(server: McpServer) {
       const raw = await runAppleScript(
         'tell application "Notes" to name of every folder'
       );
-      const folders = parseList(raw);
-      return {
-        content: [{ type: "text", text: JSON.stringify(folders, null, 2) }],
-      };
+      return textResult(JSON.stringify(parseList(raw), null, 2));
     }
   );
 
@@ -47,8 +44,8 @@ tell application "Notes"
   end repeat
   output
 end tell`;
-      const raw = await runAppleScriptMultiline(script);
-      return { content: [{ type: "text", text: raw || "No notes found." }] };
+      const raw = await runAppleScript(script);
+      return textResult(raw || "No notes found.");
     }
   );
 
@@ -71,7 +68,7 @@ end tell`;
       const prop = html ? "body" : "plaintext";
       const script = `tell application "Notes" to ${prop} of first note whose name is "${esc(name)}"`;
       const raw = await runAppleScript(script);
-      return { content: [{ type: "text", text: raw }] };
+      return textResult(raw);
     }
   );
 
@@ -97,14 +94,7 @@ end tell`;
         : "";
       const script = `tell application "Notes" to ${target}make new note with properties {name:"${esc(title)}", body:"${esc(body)}"}`;
       await runAppleScript(script);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Created note "${title}"${folder ? ` in folder "${folder}"` : ""}.`,
-          },
-        ],
-      };
+      return textResult(`Created note "${title}"${folder ? ` in folder "${folder}"` : ""}.`);
     }
   );
 
@@ -134,10 +124,7 @@ end tell`;
         : "every note";
       const script = `tell application "Notes" to name of (${scope} whose ${field} contains "${esc(query)}")`;
       const raw = await runAppleScript(script);
-      const results = parseList(raw);
-      return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
-      };
+      return textResult(JSON.stringify(parseList(raw), null, 2));
     }
   );
 
@@ -155,11 +142,7 @@ end tell`;
     async ({ name, targetFolder }) => {
       const script = `tell application "Notes" to move (first note whose name is "${esc(name)}") to folder "${esc(targetFolder)}"`;
       await runAppleScript(script);
-      return {
-        content: [
-          { type: "text", text: `Moved note "${name}" to folder "${targetFolder}".` },
-        ],
-      };
+      return textResult(`Moved note "${name}" to folder "${targetFolder}".`);
     }
   );
 
@@ -176,13 +159,7 @@ end tell`;
     async ({ name }) => {
       const script = `tell application "Notes" to delete (first note whose name is "${esc(name)}")`;
       await runAppleScript(script);
-      return {
-        content: [{ type: "text", text: `Deleted note "${name}".` }],
-      };
+      return textResult(`Deleted note "${name}".`);
     }
   );
-}
-
-function esc(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
