@@ -70,9 +70,10 @@ function appleScriptTime(hour: number, minute: number, second: number): string {
 }
 
 export function appleScriptDateLiteral(input: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(
-    input,
-  );
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(
+      input,
+    );
   if (!match) return `date "${esc(input)}"`;
 
   const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw] = match;
