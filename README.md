@@ -14,7 +14,7 @@ Requires [Bun](https://bun.sh) and macOS.
 
 ## Notes formatting
 
-`notes_create` and `notes_edit` accept markdown in the body, which is auto-converted to formatted HTML for Apple Notes. Supported syntax: `#` headings, `- ` bullet lists, `1.` numbered lists, `**bold**`, `*italic*`, `> ` blockquotes, and `- [ ]`/`- [x]` checkboxes. Existing HTML is passed through unchanged.
+`notes_create` and `notes_edit` accept markdown in the body, which is auto-converted to formatted HTML for Apple Notes. Supported syntax: `#` headings, `- ` bullet lists, `1.` numbered lists, `**bold**`, `*italic*`, fenced code blocks, and `` `inline code` ``. Existing HTML is passed through unchanged.
 
 ## How it works
 

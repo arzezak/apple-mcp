@@ -7,7 +7,7 @@ export function markdownToHtml(text: string): string {
   let i = 0;
 
   while (i < lines.length) {
-    i = consumeCheckboxBlock(lines, i, output)
+    i = consumeFencedCodeBlock(lines, i, output)
       ?? consumeBulletBlock(lines, i, output)
       ?? consumeNumberedBlock(lines, i, output)
       ?? consumeSingleLine(lines, i, output);
@@ -21,13 +21,14 @@ function looksLikeHtml(text: string): boolean {
 }
 
 function hasMarkdownPatterns(text: string): boolean {
-  return /^#{1,3}\s|^\*\s|^-\s|^>\s|\*\*.*\*\*|^\d+\.\s|^-\s*\[[ x]\]/m.test(text);
+  return /^#{1,3}\s|^\*\s|^-\s|\*\*.*\*\*|^\d+\.\s|```|`.+`/m.test(text);
 }
 
 // ── Inline formatting ───────────────────────────────────────────────
 
 function convertInlineFormatting(line: string): string {
   let result = line;
+  result = result.replace(/`([^`]+)`/g, "<font face=\"Courier\"><tt>$1</tt></font>");
   result = result.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   result = result.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
   return result;
@@ -36,13 +37,22 @@ function convertInlineFormatting(line: string): string {
 // ── Block consumers ─────────────────────────────────────────────────
 // Each returns the next index if it matched, or null to fall through.
 
-function consumeCheckboxBlock(lines: string[], i: number, output: string[]): number | null {
-  if (!isCheckboxLine(lines[i])) return null;
-  while (i < lines.length && isCheckboxLine(lines[i])) {
-    output.push(`<div>${convertCheckbox(lines[i])}</div>`);
+function consumeFencedCodeBlock(lines: string[], i: number, output: string[]): number | null {
+  if (!lines[i].startsWith("```")) return null;
+  i++;
+  while (i < lines.length && !lines[i].startsWith("```")) {
+    output.push(`<div><font face="Courier"><tt>${escapeHtml(lines[i])}</tt></font></div>`);
     i++;
   }
+  if (i < lines.length) i++;
   return i;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function consumeBulletBlock(lines: string[], i: number, output: string[]): number | null {
@@ -78,8 +88,6 @@ function consumeSingleLine(lines: string[], i: number, output: string[]): number
     output.push(`<h2>${convertInlineFormatting(match[1])}</h2>`);
   } else if ((match = line.match(/^#\s+(.+)/))) {
     output.push(`<h1>${convertInlineFormatting(match[1])}</h1>`);
-  } else if ((match = line.match(/^>\s*(.*)/))) {
-    output.push(`<blockquote>${convertInlineFormatting(match[1])}</blockquote>`);
   } else if (line.trim() === "") {
     output.push("<br>");
   } else {
@@ -90,20 +98,10 @@ function consumeSingleLine(lines: string[], i: number, output: string[]): number
 
 // ── Line matchers ───────────────────────────────────────────────────
 
-function isCheckboxLine(line: string): boolean {
-  return /^-\s*\[[ x]\]/i.test(line);
-}
-
 function isBulletLine(line: string): boolean {
-  return /^[-*]\s+/.test(line) && !isCheckboxLine(line);
+  return /^[-*]\s+/.test(line);
 }
 
 function isNumberedLine(line: string): boolean {
   return /^\d+\.\s+/.test(line);
-}
-
-function convertCheckbox(line: string): string {
-  return line
-    .replace(/^-\s*\[\s\]\s*/, "☐ ")
-    .replace(/^-\s*\[x\]\s*/i, "☑ ");
 }

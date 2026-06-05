@@ -96,10 +96,10 @@ export function registerNotesTools(server: McpServer) {
     {
       title: "Create Note",
       description:
-        "Create a new note in Apple Notes. Body supports markdown (headings, lists, bold, checkboxes) which is auto-converted to formatted HTML.",
+        "Create a new note in Apple Notes. Body supports markdown which is auto-converted to formatted HTML.",
       inputSchema: {
         title: z.string().describe("Note title"),
-        body: z.string().describe("Note body. Supports markdown: # headings, - bullets, 1. numbered, **bold**, - [ ] checkboxes. HTML also accepted."),
+        body: z.string().describe("Note body. Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted."),
         folder: z
           .string()
           .optional()
@@ -181,7 +181,7 @@ export function registerNotesTools(server: McpServer) {
         body: z
           .string()
           .optional()
-          .describe("New body content. Supports markdown: # headings, - bullets, 1. numbered, **bold**, - [ ] checkboxes. HTML also accepted."),
+          .describe("New body content. Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted."),
       },
     },
     async ({ name, title, body }) => {
