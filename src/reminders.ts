@@ -33,22 +33,26 @@ export function registerRemindersTools(server: McpServer) {
     },
     async ({ listName, includeCompleted }) => {
       const filter = includeCompleted ? "" : " whose completed is false";
-      const script = `
-tell application "Reminders"
+      const script = `tell application "Reminders"
+  tell list "${esc(listName)}"
+    set nameList to name of every reminder${filter}
+    set bodyList to body of every reminder${filter}
+    set dueDateList to due date of every reminder${filter}
+    set priorityList to priority of every reminder${filter}
+  end tell
   set output to ""
-  set theReminders to every reminder of list "${esc(listName)}"${filter}
-  repeat with r in theReminders
-    set line_ to "- " & name of r
+  repeat with i from 1 to count of nameList
+    set line_ to "- " & item i of nameList
     try
-      set d to due date of r
+      set d to item i of dueDateList
       if d is not missing value then set line_ to line_ & " | due: " & (d as text)
     end try
     try
-      set p to priority of r
+      set p to item i of priorityList
       if p is not 0 then set line_ to line_ & " | priority: " & p
     end try
     try
-      set b to body of r
+      set b to item i of bodyList
       if b is not missing value and b is not "" then set line_ to line_ & " | notes: " & b
     end try
     set output to output & line_ & linefeed
