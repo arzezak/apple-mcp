@@ -29,7 +29,6 @@ end tell`;
 }
 
 export function registerNotesTools(server: McpServer) {
-  // ── List folders ─────────────────────────────────────────────────────
   server.registerTool(
     "notes_list_folders",
     {
@@ -38,13 +37,12 @@ export function registerNotesTools(server: McpServer) {
     },
     async () => {
       const raw = await runAppleScript(
-        'tell application "Notes" to name of every folder'
+        'tell application "Notes" to name of every folder',
       );
       return textResult(JSON.stringify(parseList(raw), null, 2));
-    }
+    },
   );
 
-  // ── List notes in a folder ───────────────────────────────────────────
   server.registerTool(
     "notes_list",
     {
@@ -64,10 +62,9 @@ export function registerNotesTools(server: McpServer) {
         : buildAllNotesListScript();
       const raw = await runAppleScript(script);
       return textResult(raw || "No notes found.");
-    }
+    },
   );
 
-  // ── Read a note ──────────────────────────────────────────────────────
   server.registerTool(
     "notes_read",
     {
@@ -87,10 +84,9 @@ export function registerNotesTools(server: McpServer) {
       const script = `tell application "Notes" to ${prop} of first note whose name is "${esc(name)}"`;
       const raw = await runAppleScript(script);
       return textResult(raw);
-    }
+    },
   );
 
-  // ── Create a note ────────────────────────────────────────────────────
   server.registerTool(
     "notes_create",
     {
@@ -99,7 +95,11 @@ export function registerNotesTools(server: McpServer) {
         "Create a new note in Apple Notes. Body supports markdown which is auto-converted to formatted HTML.",
       inputSchema: {
         title: z.string().describe("Note title"),
-        body: z.string().describe("Note body. Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted."),
+        body: z
+          .string()
+          .describe(
+            "Note body. Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted.",
+          ),
         folder: z
           .string()
           .optional()
@@ -108,16 +108,15 @@ export function registerNotesTools(server: McpServer) {
     },
     async ({ title, body, folder }) => {
       const htmlBody = markdownToHtml(body);
-      const target = folder
-        ? `tell folder "${esc(folder)}" to `
-        : "";
+      const target = folder ? `tell folder "${esc(folder)}" to ` : "";
       const script = `tell application "Notes" to ${target}make new note with properties {name:"${esc(title)}", body:"${esc(htmlBody)}"}`;
       await runAppleScript(script);
-      return textResult(`Created note "${title}"${folder ? ` in folder "${folder}"` : ""}.`);
-    }
+      return textResult(
+        `Created note "${title}"${folder ? ` in folder "${folder}"` : ""}.`,
+      );
+    },
   );
 
-  // ── Search notes ─────────────────────────────────────────────────────
   server.registerTool(
     "notes_search",
     {
@@ -144,10 +143,9 @@ export function registerNotesTools(server: McpServer) {
       const script = `tell application "Notes" to name of (${scope} whose ${field} contains "${esc(query)}")`;
       const raw = await runAppleScript(script);
       return textResult(JSON.stringify(parseList(raw), null, 2));
-    }
+    },
   );
 
-  // ── Move a note ──────────────────────────────────────────────────────
   server.registerTool(
     "notes_move",
     {
@@ -162,10 +160,9 @@ export function registerNotesTools(server: McpServer) {
       const script = `tell application "Notes" to move (first note whose name is "${esc(name)}") to folder "${esc(targetFolder)}"`;
       await runAppleScript(script);
       return textResult(`Moved note "${name}" to folder "${targetFolder}".`);
-    }
+    },
   );
 
-  // ── Edit a note ──────────────────────────────────────────────────────
   server.registerTool(
     "notes_edit",
     {
@@ -174,30 +171,32 @@ export function registerNotesTools(server: McpServer) {
         "Update a note's title, body, or both. Finds the note by its exact current name.",
       inputSchema: {
         name: z.string().describe("Exact current name of the note"),
-        title: z
-          .string()
-          .optional()
-          .describe("New title for the note"),
+        title: z.string().optional().describe("New title for the note"),
         body: z
           .string()
           .optional()
-          .describe("New body content. Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted."),
+          .describe(
+            "New body content. Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted.",
+          ),
       },
     },
     async ({ name, title, body }) => {
       if (!title && !body) {
         return textResult("Nothing to update. Provide a title, body, or both.");
       }
-      const lines = [`tell application "Notes"`, `  set n to first note whose name is "${esc(name)}"`];
-      if (body !== undefined) lines.push(`  set body of n to "${esc(markdownToHtml(body))}"`);
+      const lines = [
+        `tell application "Notes"`,
+        `  set n to first note whose name is "${esc(name)}"`,
+      ];
+      if (body !== undefined)
+        lines.push(`  set body of n to "${esc(markdownToHtml(body))}"`);
       if (title !== undefined) lines.push(`  set name of n to "${esc(title)}"`);
       lines.push("end tell");
       await runAppleScript(lines.join("\n"));
       return textResult(`Updated note "${name}".`);
-    }
+    },
   );
 
-  // ── Delete a note ────────────────────────────────────────────────────
   server.registerTool(
     "notes_delete",
     {
@@ -211,6 +210,6 @@ export function registerNotesTools(server: McpServer) {
       const script = `tell application "Notes" to delete (first note whose name is "${esc(name)}")`;
       await runAppleScript(script);
       return textResult(`Deleted note "${name}".`);
-    }
+    },
   );
 }

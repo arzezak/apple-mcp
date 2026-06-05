@@ -7,10 +7,11 @@ export function markdownToHtml(text: string): string {
   let i = 0;
 
   while (i < lines.length) {
-    i = consumeFencedCodeBlock(lines, i, output)
-      ?? consumeBulletBlock(lines, i, output)
-      ?? consumeNumberedBlock(lines, i, output)
-      ?? consumeSingleLine(lines, i, output);
+    i =
+      consumeFencedCodeBlock(lines, i, output) ??
+      consumeBulletBlock(lines, i, output) ??
+      consumeNumberedBlock(lines, i, output) ??
+      consumeSingleLine(lines, i, output);
   }
 
   return output.join("\n");
@@ -24,24 +25,28 @@ function hasMarkdownPatterns(text: string): boolean {
   return /^#{1,3}\s|^\*\s|^-\s|\*\*.*\*\*|^\d+\.\s|```|`.+`/m.test(text);
 }
 
-// ── Inline formatting ───────────────────────────────────────────────
-
 function convertInlineFormatting(line: string): string {
   let result = line;
-  result = result.replace(/`([^`]+)`/g, "<font face=\"Courier\"><tt>$1</tt></font>");
+  result = result.replace(
+    /`([^`]+)`/g,
+    '<font face="Courier"><tt>$1</tt></font>',
+  );
   result = result.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   result = result.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
   return result;
 }
 
-// ── Block consumers ─────────────────────────────────────────────────
-// Each returns the next index if it matched, or null to fall through.
-
-function consumeFencedCodeBlock(lines: string[], i: number, output: string[]): number | null {
+function consumeFencedCodeBlock(
+  lines: string[],
+  i: number,
+  output: string[],
+): number | null {
   if (!lines[i].startsWith("```")) return null;
   i++;
   while (i < lines.length && !lines[i].startsWith("```")) {
-    output.push(`<div><font face="Courier"><tt>${escapeHtml(lines[i])}</tt></font></div>`);
+    output.push(
+      `<div><font face="Courier"><tt>${escapeHtml(lines[i])}</tt></font></div>`,
+    );
     i++;
   }
   if (i < lines.length) i++;
@@ -55,7 +60,11 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function consumeBulletBlock(lines: string[], i: number, output: string[]): number | null {
+function consumeBulletBlock(
+  lines: string[],
+  i: number,
+  output: string[],
+): number | null {
   if (!isBulletLine(lines[i])) return null;
   output.push("<ul>");
   while (i < lines.length && isBulletLine(lines[i])) {
@@ -67,7 +76,11 @@ function consumeBulletBlock(lines: string[], i: number, output: string[]): numbe
   return i;
 }
 
-function consumeNumberedBlock(lines: string[], i: number, output: string[]): number | null {
+function consumeNumberedBlock(
+  lines: string[],
+  i: number,
+  output: string[],
+): number | null {
   if (!isNumberedLine(lines[i])) return null;
   output.push("<ol>");
   while (i < lines.length && isNumberedLine(lines[i])) {
@@ -79,7 +92,11 @@ function consumeNumberedBlock(lines: string[], i: number, output: string[]): num
   return i;
 }
 
-function consumeSingleLine(lines: string[], i: number, output: string[]): number {
+function consumeSingleLine(
+  lines: string[],
+  i: number,
+  output: string[],
+): number {
   const line = lines[i];
   let match: RegExpMatchArray | null;
   if ((match = line.match(/^###\s+(.+)/))) {
@@ -95,8 +112,6 @@ function consumeSingleLine(lines: string[], i: number, output: string[]): number
   }
   return i + 1;
 }
-
-// ── Line matchers ───────────────────────────────────────────────────
 
 function isBulletLine(line: string): boolean {
   return /^[-*]\s+/.test(line);

@@ -3,7 +3,6 @@ import { z } from "zod";
 import { runAppleScript, parseList, esc, textResult } from "./osascript.ts";
 
 export function registerRemindersTools(server: McpServer) {
-  // ── List all reminder lists ──────────────────────────────────────────
   server.registerTool(
     "reminders_list_lists",
     {
@@ -12,13 +11,12 @@ export function registerRemindersTools(server: McpServer) {
     },
     async () => {
       const raw = await runAppleScript(
-        'tell application "Reminders" to name of every list'
+        'tell application "Reminders" to name of every list',
       );
       return textResult(JSON.stringify(parseList(raw), null, 2));
-    }
+    },
   );
 
-  // ── List reminders in a list ─────────────────────────────────────────
   server.registerTool(
     "reminders_list",
     {
@@ -34,9 +32,7 @@ export function registerRemindersTools(server: McpServer) {
       },
     },
     async ({ listName, includeCompleted }) => {
-      const filter = includeCompleted
-        ? ""
-        : " whose completed is false";
+      const filter = includeCompleted ? "" : " whose completed is false";
       const script = `
 tell application "Reminders"
   set output to ""
@@ -61,10 +57,9 @@ tell application "Reminders"
 end tell`;
       const raw = await runAppleScript(script);
       return textResult(raw || "No reminders found.");
-    }
+    },
   );
 
-  // ── Create a reminder ────────────────────────────────────────────────
   server.registerTool(
     "reminders_create",
     {
@@ -78,7 +73,7 @@ end tell`;
           .string()
           .optional()
           .describe(
-            'Due date string in locale format, e.g. "2026-06-10 09:00:00" or "June 10, 2026 9:00 AM"'
+            'Due date string in locale format, e.g. "2026-06-10 09:00:00" or "June 10, 2026 9:00 AM"',
           ),
         priority: z
           .number()
@@ -97,10 +92,9 @@ end tell`;
       const script = `tell application "Reminders" to tell list "${esc(listName)}" to make new reminder with properties {${props.join(", ")}}`;
       await runAppleScript(script);
       return textResult(`Created reminder "${name}" in list "${listName}".`);
-    }
+    },
   );
 
-  // ── Complete a reminder ──────────────────────────────────────────────
   server.registerTool(
     "reminders_complete",
     {
@@ -115,10 +109,9 @@ end tell`;
       const script = `tell application "Reminders" to tell list "${esc(listName)}" to set completed of (first reminder whose name is "${esc(name)}") to true`;
       await runAppleScript(script);
       return textResult(`Completed reminder "${name}".`);
-    }
+    },
   );
 
-  // ── Delete a reminder ────────────────────────────────────────────────
   server.registerTool(
     "reminders_delete",
     {
@@ -133,10 +126,9 @@ end tell`;
       const script = `tell application "Reminders" to delete (first reminder of list "${esc(listName)}" whose name is "${esc(name)}")`;
       await runAppleScript(script);
       return textResult(`Deleted reminder "${name}".`);
-    }
+    },
   );
 
-  // ── Search reminders ─────────────────────────────────────────────────
   server.registerTool(
     "reminders_search",
     {
@@ -158,6 +150,6 @@ end tell`;
       const script = `tell application "Reminders" to name of (every reminder ${filter})`;
       const raw = await runAppleScript(script);
       return textResult(JSON.stringify(parseList(raw), null, 2));
-    }
+    },
   );
 }

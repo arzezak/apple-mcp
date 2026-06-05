@@ -36,7 +36,6 @@ end tell`;
 }
 
 export function registerCalendarTools(server: McpServer) {
-  // ── List calendars ───────────────────────────────────────────────────
   server.registerTool(
     "calendar_list_calendars",
     {
@@ -45,13 +44,12 @@ export function registerCalendarTools(server: McpServer) {
     },
     async () => {
       const raw = await runAppleScript(
-        'tell application "Calendar" to name of every calendar'
+        'tell application "Calendar" to name of every calendar',
       );
       return textResult(JSON.stringify(parseList(raw), null, 2));
-    }
+    },
   );
 
-  // ── List events ──────────────────────────────────────────────────────
   server.registerTool(
     "calendar_list_events",
     {
@@ -66,7 +64,9 @@ export function registerCalendarTools(server: McpServer) {
         daysAhead: z
           .number()
           .default(1)
-          .describe("Number of days to look ahead from today (default: 1 = today only)"),
+          .describe(
+            "Number of days to look ahead from today (default: 1 = today only)",
+          ),
         daysBack: z
           .number()
           .default(0)
@@ -82,12 +82,13 @@ set seconds of midnight to 0
 set theStart to midnight - (${daysBack} * days)
 set theEnd to midnight + (${daysAhead} * days) - 1`;
       const eventFilter = `whose start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
-      const raw = await runAppleScript(eventQueryScript(calScope, dateSetup, eventFilter));
+      const raw = await runAppleScript(
+        eventQueryScript(calScope, dateSetup, eventFilter),
+      );
       return textResult(raw || "No events found.");
-    }
+    },
   );
 
-  // ── Create event ─────────────────────────────────────────────────────
   server.registerTool(
     "calendar_create_event",
     {
@@ -160,10 +161,9 @@ end tell`;
 
       await runAppleScript(script);
       return textResult(`Created event "${title}" on calendar "${calendar}".`);
-    }
+    },
   );
 
-  // ── Find events by name ──────────────────────────────────────────────
   server.registerTool(
     "calendar_search_events",
     {
@@ -190,12 +190,13 @@ set minutes of theStart to 0
 set seconds of theStart to 0
 set theEnd to theStart + (${daysAhead} * days)`;
       const eventFilter = `whose summary contains "${esc(query)}" and start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
-      const raw = await runAppleScript(eventQueryScript(calScope, dateSetup, eventFilter));
+      const raw = await runAppleScript(
+        eventQueryScript(calScope, dateSetup, eventFilter),
+      );
       return textResult(raw || "No events found.");
-    }
+    },
   );
 
-  // ── Delete an event ──────────────────────────────────────────────────
   server.registerTool(
     "calendar_delete_event",
     {
@@ -211,6 +212,6 @@ set theEnd to theStart + (${daysAhead} * days)`;
       const script = `tell application "Calendar" to tell calendar "${esc(calendar)}" to delete (first event whose summary is "${esc(title)}")`;
       await runAppleScript(script);
       return textResult(`Deleted event "${title}".`);
-    }
+    },
   );
 }
