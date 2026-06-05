@@ -40,7 +40,13 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-For Claude Code, add to `.mcp.json` in your project root or `~/.claude/.mcp.json` globally:
+For Claude Code, either run:
+
+```bash
+claude mcp add --scope user apple-mcp -- bun run /FULL/PATH/TO/apple-mcp/src/index.ts
+```
+
+Or manually add to `.mcp.json` in your project root or `~/.claude/.mcp.json` globally:
 
 ```json
 {
