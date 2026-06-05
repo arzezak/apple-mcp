@@ -110,31 +110,6 @@ describe("HTML escaping", () => {
     expect(markdownToHtml("Tom & Jerry <3")).toBe("Tom & Jerry <3");
   });
 
-  test("HTML tags in headings pass through unescaped", () => {
-    expect(markdownToHtml("# <script>alert(1)</script>")).toBe(
-      "<h1><script>alert(1)</script></h1>",
-    );
-  });
-
-  test("HTML tags in bullet items pass through unescaped", () => {
-    expect(markdownToHtml("- <img src=x>")).toBe(
-      "<ul>\n<li><img src=x></li>\n</ul>",
-    );
-  });
-
-  test("HTML tags in plain lines pass through unescaped", () => {
-    expect(markdownToHtml("**bold** then <script>x</script>")).toBe(
-      "<div><b>bold</b> then <script>x</script></div>",
-    );
-  });
-
-  test("HTML inside inline code is not escaped", () => {
-    // <script> not <div>, to avoid triggering looksLikeHtml passthrough
-    expect(markdownToHtml("use `<script>` tag")).toBe(
-      '<div>use <font face="Courier"><tt><script></tt></font> tag</div>',
-    );
-  });
-
   test("ampersand in markdown lines is not escaped", () => {
     expect(markdownToHtml("- A & B")).toBe("<ul>\n<li>A & B</li>\n</ul>");
   });
@@ -147,13 +122,40 @@ describe("HTML escaping", () => {
   });
 });
 
-describe("inline code double-processing", () => {
-  test("bold markers inside inline code are incorrectly processed as bold", () => {
+describe("current markdown escaping limitations", () => {
+  test("HTML tags in headings currently pass through unescaped", () => {
+    expect(markdownToHtml("# <script>alert(1)</script>")).toBe(
+      "<h1><script>alert(1)</script></h1>",
+    );
+  });
+
+  test("HTML tags in bullet items currently pass through unescaped", () => {
+    expect(markdownToHtml("- <img src=x>")).toBe(
+      "<ul>\n<li><img src=x></li>\n</ul>",
+    );
+  });
+
+  test("HTML tags in plain lines currently pass through unescaped", () => {
+    expect(markdownToHtml("**bold** then <script>x</script>")).toBe(
+      "<div><b>bold</b> then <script>x</script></div>",
+    );
+  });
+
+  test("HTML inside inline code currently passes through unescaped", () => {
+    // <script> not <div>, to avoid triggering looksLikeHtml passthrough
+    expect(markdownToHtml("use `<script>` tag")).toBe(
+      '<div>use <font face="Courier"><tt><script></tt></font> tag</div>',
+    );
+  });
+});
+
+describe("current inline code formatting limitations", () => {
+  test("bold markers inside inline code are currently processed as bold", () => {
     const result = markdownToHtml("use `**not bold**` here");
     expect(result).toContain("<b>not bold</b>");
   });
 
-  test("italic markers inside inline code are incorrectly processed as italic", () => {
+  test("italic markers inside inline code are currently processed as italic", () => {
     const result = markdownToHtml("use `*x*` here");
     expect(result).toContain("<i>");
   });

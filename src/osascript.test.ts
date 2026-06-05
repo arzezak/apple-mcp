@@ -18,20 +18,22 @@ describe("parseList", () => {
     expect(parseList("missing value")).toEqual([]);
   });
 
-  test("incorrectly splits items containing comma-space", () => {
-    expect(parseList("Work, Personal, Home")).toEqual([
-      "Work",
-      "Personal",
-      "Home",
-    ]);
-  });
-
   test("trims whitespace from items", () => {
     expect(parseList("  a , b , c ")).toEqual(["a", "b", "c"]);
   });
 
   test("filters out empty items", () => {
     expect(parseList(", , a")).toEqual(["a"]);
+  });
+});
+
+describe("current parseList limitations", () => {
+  test("items containing comma-space are currently split as separate items", () => {
+    expect(parseList("Work, Personal, Home")).toEqual([
+      "Work",
+      "Personal",
+      "Home",
+    ]);
   });
 });
 

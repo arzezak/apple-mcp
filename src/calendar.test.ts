@@ -33,8 +33,8 @@ describe("calendarCreateEventScript", () => {
 
     expect(script).toContain("set hours of theDate to 0");
     expect(script).toContain("set minutes of theDate to 0");
-    expect(script).not.toContain("14");
-    expect(script).not.toContain("45");
+    expect(script).not.toContain("set hours of theDate to 14");
+    expect(script).not.toContain("set minutes of theDate to 45");
   });
 
   test("escapes special characters in title and location", () => {
