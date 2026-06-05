@@ -68,7 +68,7 @@ set theDate to theDate + (${daysFromNow} * days)
 set hours of theDate to 0
 set minutes of theDate to 0
 set seconds of theDate to 0
-set theEnd to theDate + days
+set theEnd to theDate + days - 1
 tell application "Calendar"
   tell calendar "${esc(calendar)}"
     make new event with properties {start date:theDate, end date:theEnd, ${props.join(", ")}}

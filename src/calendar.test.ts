@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { calendarCreateEventScript } from "./calendar.ts";
 
 describe("calendarCreateEventScript", () => {
-  test("all-day events include an end date", () => {
+  test("all-day events end on the same day", () => {
     const script = calendarCreateEventScript({
       calendar: "Home",
       title: "Trip",
@@ -13,7 +13,7 @@ describe("calendarCreateEventScript", () => {
       allDay: true,
     });
 
-    expect(script).toContain("set theEnd to theDate + days");
+    expect(script).toContain("set theEnd to theDate + days - 1");
     expect(script).toContain(
       "make new event with properties {start date:theDate, end date:theEnd, summary:",
     );
