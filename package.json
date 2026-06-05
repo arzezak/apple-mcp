@@ -1,0 +1,23 @@
+{
+  "name": "apple-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Apple Reminders, Notes, and Calendar via AppleScript",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "apple-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}
