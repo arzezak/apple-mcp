@@ -12,6 +12,10 @@ Requires [Bun](https://bun.sh) and macOS.
 
 **Calendar:** `calendar_list_calendars`, `calendar_list_events`, `calendar_create_event`, `calendar_search_events`, `calendar_delete_event`
 
+## How it works
+
+This is a **stdio-based** MCP server. You don't start it yourself. The MCP client (Claude Desktop, Claude Code, etc.) spawns the process on demand and communicates over stdin/stdout. Just register it in your client config and the client handles the rest.
+
 ## Setup
 
 ```bash
