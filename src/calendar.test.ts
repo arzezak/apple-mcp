@@ -20,6 +20,40 @@ describe("calendarCreateEventScript", () => {
     expect(script).toContain("allday event:true");
   });
 
+  test("all-day events ignore provided hour and minute values", () => {
+    const script = calendarCreateEventScript({
+      calendar: "Home",
+      title: "Holiday",
+      daysFromNow: 0,
+      hour: 14,
+      minute: 45,
+      durationMinutes: 60,
+      allDay: true,
+    });
+
+    expect(script).toContain("set hours of theDate to 0");
+    expect(script).toContain("set minutes of theDate to 0");
+    expect(script).not.toContain("14");
+    expect(script).not.toContain("45");
+  });
+
+  test("escapes special characters in title and location", () => {
+    const script = calendarCreateEventScript({
+      calendar: 'Work "Office"',
+      title: 'Meeting \\ "Room"',
+      daysFromNow: 0,
+      hour: 9,
+      minute: 0,
+      durationMinutes: 60,
+      location: 'Floor "3"',
+      allDay: false,
+    });
+
+    expect(script).toContain('summary:"Meeting \\\\ \\"Room\\""');
+    expect(script).toContain('location:"Floor \\"3\\""');
+    expect(script).toContain('calendar "Work \\"Office\\""');
+  });
+
   test("timed events keep duration-based end dates", () => {
     const script = calendarCreateEventScript({
       calendar: "Work",
