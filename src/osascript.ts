@@ -23,7 +23,10 @@ export function runAppleScript(script: string): Promise<string> {
 
 export function parseList(raw: string): string[] {
   if (!raw || raw === "missing value") return [];
-  return raw.split(", ").map((s) => s.trim()).filter(Boolean);
+  return raw
+    .split(", ")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function esc(s: string): string {
