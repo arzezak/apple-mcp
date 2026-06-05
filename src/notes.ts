@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, parseList, esc, textResult } from "./osascript.js";
+import { runAppleScript, parseList, esc, textResult } from "./osascript.ts";
 
 export function registerNotesTools(server: McpServer) {
   // ── List folders ─────────────────────────────────────────────────────
@@ -40,7 +40,8 @@ export function registerNotesTools(server: McpServer) {
 tell application "Notes"
   set output to ""
   repeat with n in (${scope})
-    set output to output & name of n & " | folder: " & name of container of n & " | modified: " & (modification date of n as text) & linefeed
+    set folderName to name of (container of n)
+    set output to output & name of n & " | folder: " & folderName & " | modified: " & (modification date of n as text) & linefeed
   end repeat
   output
 end tell`;

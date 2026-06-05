@@ -2,6 +2,8 @@
 
 MCP server for Apple Reminders, Notes, and Calendar via AppleScript.
 
+Requires [Bun](https://bun.sh) and macOS.
+
 ## Tools (18 total)
 
 **Reminders:** `reminders_list_lists`, `reminders_list`, `reminders_create`, `reminders_complete`, `reminders_delete`, `reminders_search`
@@ -14,9 +16,10 @@ MCP server for Apple Reminders, Notes, and Calendar via AppleScript.
 
 ```bash
 cd apple-mcp
-npm install
-npm run build
+bun install
 ```
+
+No build step. Bun runs TypeScript directly.
 
 ## Register with Claude
 
@@ -26,14 +29,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "apple-mcp": {
-      "command": "node",
-      "args": ["/FULL/PATH/TO/apple-mcp/dist/index.js"]
+      "command": "bun",
+      "args": ["run", "/FULL/PATH/TO/apple-mcp/src/index.ts"]
     }
   }
 }
 ```
-
-Replace `/FULL/PATH/TO/` with the actual path where you put the project.
 
 For Claude Code, add to `.mcp.json` in your project root or `~/.claude/.mcp.json` globally:
 
@@ -41,12 +42,14 @@ For Claude Code, add to `.mcp.json` in your project root or `~/.claude/.mcp.json
 {
   "mcpServers": {
     "apple-mcp": {
-      "command": "node",
-      "args": ["/FULL/PATH/TO/apple-mcp/dist/index.js"]
+      "command": "bun",
+      "args": ["run", "/FULL/PATH/TO/apple-mcp/src/index.ts"]
     }
   }
 }
 ```
+
+Replace `/FULL/PATH/TO/` with the actual path.
 
 ## Permissions
 

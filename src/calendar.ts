@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, parseList, esc, textResult } from "./osascript.js";
+import { runAppleScript, parseList, esc, textResult } from "./osascript.ts";
 
 function eventQueryScript(
   calScope: string | null,
