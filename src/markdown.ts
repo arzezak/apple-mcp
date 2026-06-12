@@ -1,6 +1,6 @@
 export function markdownToHtml(text: string): string {
   if (looksLikeHtml(text)) return text;
-  if (!hasMarkdownPatterns(text)) return text;
+  if (!hasMarkdownPatterns(text)) return escapeHtml(text);
 
   const lines = text.split("\n");
   const output: string[] = [];
@@ -26,7 +26,10 @@ function hasMarkdownPatterns(text: string): boolean {
 }
 
 function convertInlineFormatting(line: string): string {
-  let result = line;
+  // Escape first so user text can't inject HTML. Markdown markers (`*`, backtick)
+  // are ASCII and untouched by escaping, and the formatting tags we emit below are
+  // added after escaping, so they survive as real markup.
+  let result = escapeHtml(line);
   result = result.replace(
     /`([^`]+)`/g,
     '<font face="Courier"><tt>$1</tt></font>',

@@ -106,12 +106,12 @@ describe("fenced code blocks", () => {
 });
 
 describe("HTML escaping", () => {
-  test("plain text with HTML entities is not escaped on passthrough", () => {
-    expect(markdownToHtml("Tom & Jerry <3")).toBe("Tom & Jerry <3");
+  test("plain text with HTML entities is escaped on passthrough", () => {
+    expect(markdownToHtml("Tom & Jerry <3")).toBe("Tom &amp; Jerry &lt;3");
   });
 
-  test("ampersand in markdown lines is not escaped", () => {
-    expect(markdownToHtml("- A & B")).toBe("<ul>\n<li>A & B</li>\n</ul>");
+  test("ampersand in markdown lines is escaped", () => {
+    expect(markdownToHtml("- A & B")).toBe("<ul>\n<li>A &amp; B</li>\n</ul>");
   });
 
   test("fenced code blocks escape HTML", () => {
@@ -120,31 +120,29 @@ describe("HTML escaping", () => {
       '<div><font face="Courier"><tt>&lt;script&gt;&amp;&lt;/script&gt;</tt></font></div>',
     );
   });
-});
 
-describe("current markdown escaping limitations", () => {
-  test("HTML tags in headings currently pass through unescaped", () => {
+  test("HTML tags in headings are escaped", () => {
     expect(markdownToHtml("# <script>alert(1)</script>")).toBe(
-      "<h1><script>alert(1)</script></h1>",
+      "<h1>&lt;script&gt;alert(1)&lt;/script&gt;</h1>",
     );
   });
 
-  test("HTML tags in bullet items currently pass through unescaped", () => {
+  test("HTML tags in bullet items are escaped", () => {
     expect(markdownToHtml("- <img src=x>")).toBe(
-      "<ul>\n<li><img src=x></li>\n</ul>",
+      "<ul>\n<li>&lt;img src=x&gt;</li>\n</ul>",
     );
   });
 
-  test("HTML tags in plain lines currently pass through unescaped", () => {
+  test("HTML tags in plain lines are escaped while markdown still renders", () => {
     expect(markdownToHtml("**bold** then <script>x</script>")).toBe(
-      "<div><b>bold</b> then <script>x</script></div>",
+      "<div><b>bold</b> then &lt;script&gt;x&lt;/script&gt;</div>",
     );
   });
 
-  test("HTML inside inline code currently passes through unescaped", () => {
+  test("HTML inside inline code is escaped", () => {
     // <script> not <div>, to avoid triggering looksLikeHtml passthrough
     expect(markdownToHtml("use `<script>` tag")).toBe(
-      '<div>use <font face="Courier"><tt><script></tt></font> tag</div>',
+      '<div>use <font face="Courier"><tt>&lt;script&gt;</tt></font> tag</div>',
     );
   });
 });
