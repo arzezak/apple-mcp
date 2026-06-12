@@ -5,10 +5,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { registerRemindersTools } from "./reminders.ts";
 import { registerNotesTools } from "./notes.ts";
 import { registerCalendarTools } from "./calendar.ts";
+import pkg from "../package.json" with { type: "json" };
 
 const server = new McpServer({
   name: "apple-mcp",
-  version: "1.0.0",
+  version: pkg.version,
 });
 
 registerRemindersTools(server);
