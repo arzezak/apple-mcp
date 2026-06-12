@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   runAppleScript,
   parseList,
+  nameListScript,
   esc,
   textResult,
   appleScriptDateLiteral,
@@ -17,7 +18,7 @@ export function registerRemindersTools(server: McpServer) {
     },
     async () => {
       const raw = await runAppleScript(
-        'tell application "Reminders" to name of every list',
+        nameListScript("Reminders", "name of every list"),
       );
       return textResult(JSON.stringify(parseList(raw), null, 2));
     },
@@ -157,8 +158,9 @@ end tell`;
       const filter = includeCompleted
         ? `whose name contains "${esc(query)}"`
         : `whose name contains "${esc(query)}" and completed is false`;
-      const script = `tell application "Reminders" to name of (every reminder ${filter})`;
-      const raw = await runAppleScript(script);
+      const raw = await runAppleScript(
+        nameListScript("Reminders", `name of (every reminder ${filter})`),
+      );
       return textResult(JSON.stringify(parseList(raw), null, 2));
     },
   );

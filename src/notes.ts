@@ -1,6 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, parseList, esc, textResult } from "./osascript.ts";
+import {
+  runAppleScript,
+  parseList,
+  nameListScript,
+  esc,
+  textResult,
+} from "./osascript.ts";
 import { markdownToHtml } from "./markdown.ts";
 
 function buildFolderListScript(folder: string): string {
@@ -37,7 +43,7 @@ export function registerNotesTools(server: McpServer) {
     },
     async () => {
       const raw = await runAppleScript(
-        'tell application "Notes" to name of every folder',
+        nameListScript("Notes", "name of every folder"),
       );
       return textResult(JSON.stringify(parseList(raw), null, 2));
     },
@@ -140,8 +146,12 @@ export function registerNotesTools(server: McpServer) {
       const scope = folder
         ? `every note in folder "${esc(folder)}"`
         : "every note";
-      const script = `tell application "Notes" to name of (${scope} whose ${field} contains "${esc(query)}")`;
-      const raw = await runAppleScript(script);
+      const raw = await runAppleScript(
+        nameListScript(
+          "Notes",
+          `name of (${scope} whose ${field} contains "${esc(query)}")`,
+        ),
+      );
       return textResult(JSON.stringify(parseList(raw), null, 2));
     },
   );

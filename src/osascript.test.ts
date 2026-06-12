@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { appleScriptDateLiteral, parseList } from "./osascript.ts";
+import {
+  appleScriptDateLiteral,
+  nameListScript,
+  parseList,
+} from "./osascript.ts";
 
 describe("parseList", () => {
-  test("splits comma-separated items", () => {
-    expect(parseList("Work, Home, School")).toEqual(["Work", "Home", "School"]);
+  test("splits linefeed-separated items", () => {
+    expect(parseList("Work\nHome\nSchool")).toEqual(["Work", "Home", "School"]);
   });
 
   test("returns single item", () => {
@@ -18,22 +22,36 @@ describe("parseList", () => {
     expect(parseList("missing value")).toEqual([]);
   });
 
-  test("trims whitespace from items", () => {
-    expect(parseList("  a , b , c ")).toEqual(["a", "b", "c"]);
+  test("trims surrounding whitespace from items", () => {
+    expect(parseList("  a \n b \n c ")).toEqual(["a", "b", "c"]);
   });
 
-  test("filters out empty items", () => {
-    expect(parseList(", , a")).toEqual(["a"]);
+  test("filters out empty lines", () => {
+    expect(parseList("\n\na")).toEqual(["a"]);
+  });
+
+  test("preserves names containing comma-space", () => {
+    expect(parseList("Shopping, urgent\nWork")).toEqual([
+      "Shopping, urgent",
+      "Work",
+    ]);
   });
 });
 
-describe("current parseList limitations", () => {
-  test("items containing comma-space are currently split as separate items", () => {
-    expect(parseList("Work, Personal, Home")).toEqual([
-      "Work",
-      "Personal",
-      "Home",
-    ]);
+describe("nameListScript", () => {
+  test("joins the list with linefeed so parseList can split unambiguously", () => {
+    const script = nameListScript("Reminders", "name of every list");
+    expect(script).toBe(
+      `tell application "Reminders" to set resultList to name of every list
+set AppleScript's text item delimiters to linefeed
+resultList as text`,
+    );
+  });
+
+  test("round-trips with parseList: comma-space names survive", () => {
+    // Simulates the linefeed-joined text the script produces.
+    const joined = "Shopping, urgent\nWork\nHome";
+    expect(parseList(joined)).toEqual(["Shopping, urgent", "Work", "Home"]);
   });
 });
 

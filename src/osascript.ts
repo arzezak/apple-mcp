@@ -24,9 +24,21 @@ export function runAppleScript(script: string): Promise<string> {
 export function parseList(raw: string): string[] {
   if (!raw || raw === "missing value") return [];
   return raw
-    .split(", ")
+    .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+// Build a script that returns an AppleScript list joined by linefeed rather than
+// letting osascript render it with ", " (which is ambiguous: an item may itself
+// contain a comma-space). parseList splits the result back on linefeed.
+export function nameListScript(
+  application: string,
+  listExpression: string,
+): string {
+  return `tell application "${application}" to set resultList to ${listExpression}
+set AppleScript's text item delimiters to linefeed
+resultList as text`;
 }
 
 const MONTH_NAMES = [

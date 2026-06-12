@@ -1,6 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, parseList, esc, textResult } from "./osascript.ts";
+import {
+  runAppleScript,
+  parseList,
+  nameListScript,
+  esc,
+  textResult,
+} from "./osascript.ts";
 
 function eventQueryScript(
   calScope: string | null,
@@ -99,7 +105,7 @@ export function registerCalendarTools(server: McpServer) {
     },
     async () => {
       const raw = await runAppleScript(
-        'tell application "Calendar" to name of every calendar',
+        nameListScript("Calendar", "name of every calendar"),
       );
       return textResult(JSON.stringify(parseList(raw), null, 2));
     },
