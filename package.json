@@ -7,6 +7,10 @@
   "bin": {
     "apple-mcp": "src/index.ts"
   },
+  "scripts": {
+    "test": "bun test",
+    "test:integration": "APPLE_MCP_INTEGRATION=1 bun test src/apple-apps.integration.test.ts"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0",
     "zod": "^3.23.0"
