@@ -34,19 +34,14 @@ function runIntegrationAppleScript(script: string): Promise<string> {
   }
 
   return new Promise((resolve, reject) => {
-    execFile(
-      "osascript",
-      args,
-      { timeout: 110_000 },
-      (err, stdout, stderr) => {
-        if (err) {
-          const msg = stderr?.trim() || err.message;
-          reject(new Error(`AppleScript error: ${msg}`));
-          return;
-        }
-        resolve(stdout.trim());
-      },
-    );
+    execFile("osascript", args, { timeout: 110_000 }, (err, stdout, stderr) => {
+      if (err) {
+        const msg = stderr?.trim() || err.message;
+        reject(new Error(`AppleScript error: ${msg}`));
+        return;
+      }
+      resolve(stdout.trim());
+    });
   });
 }
 

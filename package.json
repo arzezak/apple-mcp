@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "bun test",
-    "test:integration": "APPLE_MCP_INTEGRATION=1 bun test src/apple-apps.integration.test.ts"
+    "test:integration": "APPLE_MCP_INTEGRATION=1 bun test src/integration.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0",
