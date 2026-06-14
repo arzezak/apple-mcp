@@ -1,24 +1,32 @@
 import { execFile } from "node:child_process";
 
-function execOsascript(args: string[]): Promise<string> {
+function execOsascript(args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile("osascript", args, { timeout: 30_000 }, (err, stdout, stderr) => {
-      if (err) {
-        const msg = stderr?.trim() || err.message;
-        reject(new Error(`AppleScript error: ${msg}`));
-        return;
-      }
-      resolve(stdout.trim());
-    });
+    execFile(
+      "osascript",
+      args,
+      { timeout: timeoutMs },
+      (err, stdout, stderr) => {
+        if (err) {
+          const msg = stderr?.trim() || err.message;
+          reject(new Error(`AppleScript error: ${msg}`));
+          return;
+        }
+        resolve(stdout.trim());
+      },
+    );
   });
 }
 
-export function runAppleScript(script: string): Promise<string> {
+export function runAppleScript(
+  script: string,
+  timeoutMs = 30_000,
+): Promise<string> {
   const args: string[] = [];
   for (const line of script.split("\n")) {
     args.push("-e", line);
   }
-  return execOsascript(args);
+  return execOsascript(args, timeoutMs);
 }
 
 export function parseList(raw: string): string[] {
@@ -39,6 +47,21 @@ export function nameListScript(
   return `tell application "${application}" to set resultList to ${listExpression}
 set AppleScript's text item delimiters to linefeed
 resultList as text`;
+}
+
+// Runs nameListScript and decodes its output, keeping the linefeed-join protocol
+// (and its pairing with parseList) inside this module.
+export async function runNameList(
+  application: string,
+  listExpression: string,
+  timeoutMs?: number,
+): Promise<string[]> {
+  return parseList(
+    await runAppleScript(
+      nameListScript(application, listExpression),
+      timeoutMs,
+    ),
+  );
 }
 
 const MONTH_NAMES = [
@@ -105,8 +128,4 @@ export function appleScriptDateLiteral(input: string): string {
 
 export function esc(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-export function textResult(text: string) {
-  return { content: [{ type: "text" as const, text }] };
 }

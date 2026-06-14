@@ -1,43 +1,48 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import {
-  runAppleScript,
-  parseList,
-  nameListScript,
-  esc,
-  textResult,
-} from "./osascript.ts";
+import { runAppleScript, runNameList, esc } from "./osascript.ts";
+import { textResult, jsonResult } from "./results.ts";
 
+// Event queries pay a few seconds per calendar for the whose filter, so
+// all-calendars queries on accounts with many calendars exceed the default
+// 30s osascript timeout.
+const EVENT_QUERY_TIMEOUT_MS = 120_000;
+
+function calendarsExpression(calendar?: string): string {
+  return calendar ? `{calendar "${esc(calendar)}"}` : "every calendar";
+}
+
+function setTimeOfDay(varName: string, hour = 0, minute = 0): string {
+  return `set hours of ${varName} to ${hour}
+set minutes of ${varName} to ${minute}
+set seconds of ${varName} to 0`;
+}
+
+// Fetches event records with one "properties of" Apple Event per calendar:
+// the (expensive) whose filter is evaluated once and the loop reads local
+// records, instead of paying one round trip per property per event.
 function eventQueryScript(
-  calScope: string | null,
+  calendars: string,
+  includeCalendarName: boolean,
   dateSetup: string,
   eventFilter: string,
 ): string {
-  const outputLine = calScope
-    ? `summary of e & " | " & (start date of e as text) & " → " & (end date of e as text)`
-    : `name of cal & ": " & summary of e & " | " & (start date of e as text) & " → " & (end date of e as text)`;
-
-  const body = calScope
-    ? `tell ${calScope}
-    set evts to (every event ${eventFilter})
-    repeat with e in evts
-      set output to output & ${outputLine} & linefeed
-    end repeat
-  end tell`
-    : `repeat with cal in every calendar
-    set evts to (every event of cal ${eventFilter})
-    repeat with e in evts
-      set output to output & ${outputLine} & linefeed
-    end repeat
-  end repeat`;
+  const linePrefix = includeCalendarName ? `calName & ": " & ` : "";
 
   return `
 ${dateSetup}
 
 tell application "Calendar"
-  set output to ""
-  ${body}
-  output
+  set outputLines to {}
+  repeat with cal in ${calendars}
+    set calName to name of cal
+    set recordList to properties of (every event of cal ${eventFilter})
+    repeat with r in recordList
+      set end of outputLines to (${linePrefix}summary of r & " | " & (start date of r as text) & " → " & (end date of r as text))
+    end repeat
+  end repeat
+  set AppleScript's text item delimiters to linefeed
+  outputLines as text
 end tell`;
 }
 
@@ -65,30 +70,18 @@ export function calendarCreateEventScript({
   const props: string[] = [`summary:"${esc(title)}"`];
   if (location) props.push(`location:"${esc(location)}"`);
   if (notes) props.push(`description:"${esc(notes)}"`);
+  if (allDay) props.push("allday event:true");
 
-  if (allDay) {
-    props.push("allday event:true");
-    return `
-set theDate to current date
-set theDate to theDate + (${daysFromNow} * days)
-set hours of theDate to 0
-set minutes of theDate to 0
-set seconds of theDate to 0
-set theEnd to theDate + days - 1
-tell application "Calendar"
-  tell calendar "${esc(calendar)}"
-    make new event with properties {start date:theDate, end date:theEnd, ${props.join(", ")}}
-  end tell
-end tell`;
-  }
+  const dateSetup = allDay
+    ? `${setTimeOfDay("theStart")}
+set theEnd to theStart + days - 1`
+    : `${setTimeOfDay("theStart", hour, minute)}
+set theEnd to theStart + (${durationMinutes} * minutes)`;
 
   return `
 set theStart to current date
 set theStart to theStart + (${daysFromNow} * days)
-set hours of theStart to ${hour}
-set minutes of theStart to ${minute}
-set seconds of theStart to 0
-set theEnd to theStart + (${durationMinutes} * minutes)
+${dateSetup}
 tell application "Calendar"
   tell calendar "${esc(calendar)}"
     make new event with properties {start date:theStart, end date:theEnd, ${props.join(", ")}}
@@ -104,10 +97,7 @@ export function registerCalendarTools(server: McpServer) {
       description: "Get all calendar names from Apple Calendar",
     },
     async () => {
-      const raw = await runAppleScript(
-        nameListScript("Calendar", "name of every calendar"),
-      );
-      return textResult(JSON.stringify(parseList(raw), null, 2));
+      return jsonResult(await runNameList("Calendar", "name of every calendar"));
     },
   );
 
@@ -135,16 +125,19 @@ export function registerCalendarTools(server: McpServer) {
       },
     },
     async ({ calendar, daysAhead, daysBack }) => {
-      const calScope = calendar ? `calendar "${esc(calendar)}"` : null;
       const dateSetup = `set midnight to current date
-set hours of midnight to 0
-set minutes of midnight to 0
-set seconds of midnight to 0
+${setTimeOfDay("midnight")}
 set theStart to midnight - (${daysBack} * days)
 set theEnd to midnight + (${daysAhead} * days) - 1`;
       const eventFilter = `whose start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
       const raw = await runAppleScript(
-        eventQueryScript(calScope, dateSetup, eventFilter),
+        eventQueryScript(
+          calendarsExpression(calendar),
+          !calendar,
+          dateSetup,
+          eventFilter,
+        ),
+        EVENT_QUERY_TIMEOUT_MS,
       );
       return textResult(raw || "No events found.");
     },
@@ -223,15 +216,18 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
       },
     },
     async ({ query, calendar, daysAhead }) => {
-      const calScope = calendar ? `calendar "${esc(calendar)}"` : null;
       const dateSetup = `set theStart to current date
-set hours of theStart to 0
-set minutes of theStart to 0
-set seconds of theStart to 0
+${setTimeOfDay("theStart")}
 set theEnd to theStart + (${daysAhead} * days)`;
       const eventFilter = `whose summary contains "${esc(query)}" and start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
       const raw = await runAppleScript(
-        eventQueryScript(calScope, dateSetup, eventFilter),
+        eventQueryScript(
+          calendarsExpression(calendar),
+          !calendar,
+          dateSetup,
+          eventFilter,
+        ),
+        EVENT_QUERY_TIMEOUT_MS,
       );
       return textResult(raw || "No events found.");
     },

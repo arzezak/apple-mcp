@@ -1,3 +1,8 @@
+// Lives here so the advertised capabilities stay next to the converter that
+// implements them.
+export const MARKDOWN_SYNTAX_DESCRIPTION =
+  "Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted.";
+
 export function markdownToHtml(text: string): string {
   if (looksLikeHtml(text)) return text;
   if (!hasMarkdownPatterns(text)) return escapeHtml(text);
@@ -101,13 +106,10 @@ function consumeSingleLine(
   output: string[],
 ): number {
   const line = lines[i];
-  let match: RegExpMatchArray | null;
-  if ((match = line.match(/^###\s+(.+)/))) {
-    output.push(`<h3>${convertInlineFormatting(match[1])}</h3>`);
-  } else if ((match = line.match(/^##\s+(.+)/))) {
-    output.push(`<h2>${convertInlineFormatting(match[1])}</h2>`);
-  } else if ((match = line.match(/^#\s+(.+)/))) {
-    output.push(`<h1>${convertInlineFormatting(match[1])}</h1>`);
+  const heading = line.match(/^(#{1,3})\s+(.+)/);
+  if (heading) {
+    const tag = `h${heading[1].length}`;
+    output.push(`<${tag}>${convertInlineFormatting(heading[2])}</${tag}>`);
   } else if (line.trim() === "") {
     output.push("<br>");
   } else {

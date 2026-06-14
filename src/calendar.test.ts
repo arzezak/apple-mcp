@@ -13,9 +13,9 @@ describe("calendarCreateEventScript", () => {
       allDay: true,
     });
 
-    expect(script).toContain("set theEnd to theDate + days - 1");
+    expect(script).toContain("set theEnd to theStart + days - 1");
     expect(script).toContain(
-      "make new event with properties {start date:theDate, end date:theEnd, summary:",
+      "make new event with properties {start date:theStart, end date:theEnd, summary:",
     );
     expect(script).toContain("allday event:true");
   });
@@ -31,10 +31,10 @@ describe("calendarCreateEventScript", () => {
       allDay: true,
     });
 
-    expect(script).toContain("set hours of theDate to 0");
-    expect(script).toContain("set minutes of theDate to 0");
-    expect(script).not.toContain("set hours of theDate to 14");
-    expect(script).not.toContain("set minutes of theDate to 45");
+    expect(script).toContain("set hours of theStart to 0");
+    expect(script).toContain("set minutes of theStart to 0");
+    expect(script).not.toContain("set hours of theStart to 14");
+    expect(script).not.toContain("set minutes of theStart to 45");
   });
 
   test("escapes special characters in title and location", () => {

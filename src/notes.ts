@@ -1,36 +1,30 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import {
-  runAppleScript,
-  parseList,
-  nameListScript,
-  esc,
-  textResult,
-} from "./osascript.ts";
-import { markdownToHtml } from "./markdown.ts";
+import { runAppleScript, runNameList, esc } from "./osascript.ts";
+import { textResult, jsonResult } from "./results.ts";
+import { markdownToHtml, MARKDOWN_SYNTAX_DESCRIPTION } from "./markdown.ts";
 
-function buildFolderListScript(folder: string): string {
+// Fetches names and dates as bulk lists (two Apple Events per folder) instead
+// of reading properties per note in the loop, which costs one round trip per
+// property per note.
+function buildNotesListScript(folder?: string): string {
+  const foldersExpression = folder
+    ? `{folder "${esc(folder)}"}`
+    : "every folder";
+
   return `
 tell application "Notes"
-  set output to ""
-  repeat with n in (every note in folder "${esc(folder)}")
-    set output to output & name of n & " | folder: ${esc(folder)}" & " | modified: " & (modification date of n as text) & linefeed
-  end repeat
-  output
-end tell`;
-}
-
-function buildAllNotesListScript(): string {
-  return `
-tell application "Notes"
-  set output to ""
-  repeat with f in every folder
+  set outputLines to {}
+  repeat with f in ${foldersExpression}
     set folderName to name of f
-    repeat with n in every note of f
-      set output to output & name of n & " | folder: " & folderName & " | modified: " & (modification date of n as text) & linefeed
+    set nameList to name of every note of f
+    set dateList to modification date of every note of f
+    repeat with i from 1 to count of nameList
+      set end of outputLines to (item i of nameList & " | folder: " & folderName & " | modified: " & (item i of dateList as text))
     end repeat
   end repeat
-  output
+  set AppleScript's text item delimiters to linefeed
+  outputLines as text
 end tell`;
 }
 
@@ -42,10 +36,7 @@ export function registerNotesTools(server: McpServer) {
       description: "Get all folder names from Apple Notes",
     },
     async () => {
-      const raw = await runAppleScript(
-        nameListScript("Notes", "name of every folder"),
-      );
-      return textResult(JSON.stringify(parseList(raw), null, 2));
+      return jsonResult(await runNameList("Notes", "name of every folder"));
     },
   );
 
@@ -63,10 +54,7 @@ export function registerNotesTools(server: McpServer) {
       },
     },
     async ({ folder }) => {
-      const script = folder
-        ? buildFolderListScript(folder)
-        : buildAllNotesListScript();
-      const raw = await runAppleScript(script);
+      const raw = await runAppleScript(buildNotesListScript(folder));
       return textResult(raw || "No notes found.");
     },
   );
@@ -101,11 +89,7 @@ export function registerNotesTools(server: McpServer) {
         "Create a new note in Apple Notes. Body supports markdown which is auto-converted to formatted HTML.",
       inputSchema: {
         title: z.string().describe("Note title"),
-        body: z
-          .string()
-          .describe(
-            "Note body. Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted.",
-          ),
+        body: z.string().describe(`Note body. ${MARKDOWN_SYNTAX_DESCRIPTION}`),
         folder: z
           .string()
           .optional()
@@ -146,13 +130,12 @@ export function registerNotesTools(server: McpServer) {
       const scope = folder
         ? `every note in folder "${esc(folder)}"`
         : "every note";
-      const raw = await runAppleScript(
-        nameListScript(
+      return jsonResult(
+        await runNameList(
           "Notes",
           `name of (${scope} whose ${field} contains "${esc(query)}")`,
         ),
       );
-      return textResult(JSON.stringify(parseList(raw), null, 2));
     },
   );
 
@@ -185,9 +168,7 @@ export function registerNotesTools(server: McpServer) {
         body: z
           .string()
           .optional()
-          .describe(
-            "New body content. Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted.",
-          ),
+          .describe(`New body content. ${MARKDOWN_SYNTAX_DESCRIPTION}`),
       },
     },
     async ({ name, title, body }) => {

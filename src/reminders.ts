@@ -2,12 +2,74 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   runAppleScript,
-  parseList,
-  nameListScript,
+  runNameList,
   esc,
-  textResult,
   appleScriptDateLiteral,
 } from "./osascript.ts";
+import { textResult, jsonResult } from "./results.ts";
+
+// Fastest measured shape when filtering: "properties of" evaluates the
+// completed filter once and the loop reads local records, where separate
+// per-property fetches re-evaluate the filter four times.
+function incompleteRemindersScript(listName: string): string {
+  return `tell application "Reminders"
+  tell list "${esc(listName)}"
+    set recordList to properties of (every reminder whose completed is false)
+  end tell
+  set outputLines to {}
+  repeat with r in recordList
+    set line_ to "- " & name of r
+    try
+      set d to due date of r
+      if d is not missing value then set line_ to line_ & " | due: " & (d as text)
+    end try
+    try
+      set p to priority of r
+      if p is not 0 then set line_ to line_ & " | priority: " & p
+    end try
+    try
+      set b to body of r
+      if b is not missing value and b is not "" then set line_ to line_ & " | notes: " & b
+    end try
+    set end of outputLines to line_
+  end repeat
+  set AppleScript's text item delimiters to linefeed
+  outputLines as text
+end tell`;
+}
+
+// Fastest measured shape without a filter: per-property bulk fetches.
+// "properties of every reminder" is several times slower here because full
+// records for every completed reminder come back too.
+function allRemindersScript(listName: string): string {
+  return `tell application "Reminders"
+  tell list "${esc(listName)}"
+    set nameList to name of every reminder
+    set bodyList to body of every reminder
+    set dueDateList to due date of every reminder
+    set priorityList to priority of every reminder
+  end tell
+  set outputLines to {}
+  repeat with i from 1 to count of nameList
+    set line_ to "- " & item i of nameList
+    try
+      set d to item i of dueDateList
+      if d is not missing value then set line_ to line_ & " | due: " & (d as text)
+    end try
+    try
+      set p to item i of priorityList
+      if p is not 0 then set line_ to line_ & " | priority: " & p
+    end try
+    try
+      set b to item i of bodyList
+      if b is not missing value and b is not "" then set line_ to line_ & " | notes: " & b
+    end try
+    set end of outputLines to line_
+  end repeat
+  set AppleScript's text item delimiters to linefeed
+  outputLines as text
+end tell`;
+}
 
 export function registerRemindersTools(server: McpServer) {
   server.registerTool(
@@ -17,10 +79,7 @@ export function registerRemindersTools(server: McpServer) {
       description: "Get all reminder list names from Apple Reminders",
     },
     async () => {
-      const raw = await runAppleScript(
-        nameListScript("Reminders", "name of every list"),
-      );
-      return textResult(JSON.stringify(parseList(raw), null, 2));
+      return jsonResult(await runNameList("Reminders", "name of every list"));
     },
   );
 
@@ -39,33 +98,9 @@ export function registerRemindersTools(server: McpServer) {
       },
     },
     async ({ listName, includeCompleted }) => {
-      const filter = includeCompleted ? "" : " whose completed is false";
-      const script = `tell application "Reminders"
-  tell list "${esc(listName)}"
-    set nameList to name of every reminder${filter}
-    set bodyList to body of every reminder${filter}
-    set dueDateList to due date of every reminder${filter}
-    set priorityList to priority of every reminder${filter}
-  end tell
-  set output to ""
-  repeat with i from 1 to count of nameList
-    set line_ to "- " & item i of nameList
-    try
-      set d to item i of dueDateList
-      if d is not missing value then set line_ to line_ & " | due: " & (d as text)
-    end try
-    try
-      set p to item i of priorityList
-      if p is not 0 then set line_ to line_ & " | priority: " & p
-    end try
-    try
-      set b to item i of bodyList
-      if b is not missing value and b is not "" then set line_ to line_ & " | notes: " & b
-    end try
-    set output to output & line_ & linefeed
-  end repeat
-  output
-end tell`;
+      const script = includeCompleted
+        ? allRemindersScript(listName)
+        : incompleteRemindersScript(listName);
       const raw = await runAppleScript(script);
       return textResult(raw || "No reminders found.");
     },
@@ -155,13 +190,16 @@ end tell`;
       },
     },
     async ({ query, includeCompleted }) => {
-      const filter = includeCompleted
-        ? `whose name contains "${esc(query)}"`
-        : `whose name contains "${esc(query)}" and completed is false`;
-      const raw = await runAppleScript(
-        nameListScript("Reminders", `name of (every reminder ${filter})`),
+      const completedClause = includeCompleted ? "" : " and completed is false";
+      // Scans every reminder across all lists; measured near the default 30s
+      // timeout on large databases.
+      return jsonResult(
+        await runNameList(
+          "Reminders",
+          `name of (every reminder whose name contains "${esc(query)}"${completedClause})`,
+          120_000,
+        ),
       );
-      return textResult(JSON.stringify(parseList(raw), null, 2));
     },
   );
 }
