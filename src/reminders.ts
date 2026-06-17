@@ -8,6 +8,13 @@ import {
 } from "./osascript.ts";
 import { textResult, jsonResult } from "./results.ts";
 
+const TIME_COMPONENT_RE =
+  /(?:[ T]\d{1,2}:\d{2}(?::\d{2})?\b|\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b)/i;
+
+function shouldUseAllDayDueDate(dueDate: string, allDay: boolean): boolean {
+  return allDay || !TIME_COMPONENT_RE.test(dueDate);
+}
+
 // Fastest measured shape when filtering: "properties of" evaluates the
 // completed filter once and the loop reads local records, where separate
 // per-property fetches re-evaluate the filter four times.
@@ -21,6 +28,7 @@ function incompleteRemindersScript(listName: string): string {
     set line_ to "- " & name of r
     try
       set d to due date of r
+      if d is missing value then set d to allday due date of r
       if d is not missing value then set line_ to line_ & " | due: " & (d as text)
     end try
     try
@@ -47,6 +55,7 @@ function allRemindersScript(listName: string): string {
     set nameList to name of every reminder
     set bodyList to body of every reminder
     set dueDateList to due date of every reminder
+    set allDayDueDateList to allday due date of every reminder
     set priorityList to priority of every reminder
   end tell
   set outputLines to {}
@@ -54,6 +63,7 @@ function allRemindersScript(listName: string): string {
     set line_ to "- " & item i of nameList
     try
       set d to item i of dueDateList
+      if d is missing value then set d to item i of allDayDueDateList
       if d is not missing value then set line_ to line_ & " | due: " & (d as text)
     end try
     try
@@ -69,6 +79,34 @@ function allRemindersScript(listName: string): string {
   set AppleScript's text item delimiters to linefeed
   outputLines as text
 end tell`;
+}
+
+export function reminderCreateScript({
+  listName,
+  name,
+  notes,
+  dueDate,
+  allDay,
+  priority,
+}: {
+  listName: string;
+  name: string;
+  notes?: string;
+  dueDate?: string;
+  allDay: boolean;
+  priority?: number;
+}): string {
+  const props: string[] = [`name:"${esc(name)}"`];
+  if (notes) props.push(`body:"${esc(notes)}"`);
+  if (dueDate) {
+    const dueDateProperty = shouldUseAllDayDueDate(dueDate, allDay)
+      ? "allday due date"
+      : "due date";
+    props.push(`${dueDateProperty}:${appleScriptDateLiteral(dueDate)}`);
+  }
+  if (priority !== undefined) props.push(`priority:${priority}`);
+
+  return `tell application "Reminders" to tell list "${esc(listName)}" to make new reminder with properties {${props.join(", ")}}`;
 }
 
 export function registerRemindersTools(server: McpServer) {
@@ -121,6 +159,12 @@ export function registerRemindersTools(server: McpServer) {
           .describe(
             'Due date string in locale format, e.g. "2026-06-10 09:00:00" or "June 10, 2026 9:00 AM"',
           ),
+        allDay: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Create with an all-day due date. Date-only dueDate values are treated as all-day even when this is false.",
+          ),
         priority: z
           .number()
           .min(0)
@@ -129,13 +173,15 @@ export function registerRemindersTools(server: McpServer) {
           .describe("Priority: 0=none, 1-4=high, 5=medium, 6-9=low"),
       },
     },
-    async ({ listName, name, notes, dueDate, priority }) => {
-      const props: string[] = [`name:"${esc(name)}"`];
-      if (notes) props.push(`body:"${esc(notes)}"`);
-      if (dueDate) props.push(`due date:${appleScriptDateLiteral(dueDate)}`);
-      if (priority !== undefined) props.push(`priority:${priority}`);
-
-      const script = `tell application "Reminders" to tell list "${esc(listName)}" to make new reminder with properties {${props.join(", ")}}`;
+    async ({ listName, name, notes, dueDate, allDay, priority }) => {
+      const script = reminderCreateScript({
+        listName,
+        name,
+        notes,
+        dueDate,
+        allDay,
+        priority,
+      });
       await runAppleScript(script);
       return textResult(`Created reminder "${name}" in list "${listName}".`);
     },
