@@ -1,6 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, runNameList, esc } from "./osascript.ts";
+import {
+  runAppleScript,
+  runAndConfirm,
+  runNameList,
+  esc,
+  joinLinefeedScript,
+  scopeExpression,
+} from "./osascript.ts";
 import { textResult, jsonResult } from "./results.ts";
 import { markdownToHtml, MARKDOWN_SYNTAX_DESCRIPTION } from "./markdown.ts";
 
@@ -8,14 +15,10 @@ import { markdownToHtml, MARKDOWN_SYNTAX_DESCRIPTION } from "./markdown.ts";
 // of reading properties per note in the loop, which costs one round trip per
 // property per note.
 function buildNotesListScript(folder?: string): string {
-  const foldersExpression = folder
-    ? `{folder "${esc(folder)}"}`
-    : "every folder";
-
   return `
 tell application "Notes"
   set outputLines to {}
-  repeat with f in ${foldersExpression}
+  repeat with f in ${scopeExpression("folder", folder)}
     set folderName to name of f
     set nameList to name of every note of f
     set dateList to modification date of every note of f
@@ -23,8 +26,7 @@ tell application "Notes"
       set end of outputLines to (item i of nameList & " | folder: " & folderName & " | modified: " & (item i of dateList as text))
     end repeat
   end repeat
-  set AppleScript's text item delimiters to linefeed
-  outputLines as text
+  ${joinLinefeedScript("outputLines")}
 end tell`;
 }
 
@@ -100,8 +102,8 @@ export function registerNotesTools(server: McpServer) {
       const htmlBody = markdownToHtml(body);
       const target = folder ? `tell folder "${esc(folder)}" to ` : "";
       const script = `tell application "Notes" to ${target}make new note with properties {name:"${esc(title)}", body:"${esc(htmlBody)}"}`;
-      await runAppleScript(script);
-      return textResult(
+      return runAndConfirm(
+        script,
         `Created note "${title}"${folder ? ` in folder "${folder}"` : ""}.`,
       );
     },
@@ -151,8 +153,7 @@ export function registerNotesTools(server: McpServer) {
     },
     async ({ name, targetFolder }) => {
       const script = `tell application "Notes" to move (first note whose name is "${esc(name)}") to folder "${esc(targetFolder)}"`;
-      await runAppleScript(script);
-      return textResult(`Moved note "${name}" to folder "${targetFolder}".`);
+      return runAndConfirm(script, `Moved note "${name}" to folder "${targetFolder}".`);
     },
   );
 
@@ -183,8 +184,7 @@ export function registerNotesTools(server: McpServer) {
         lines.push(`  set body of n to "${esc(markdownToHtml(body))}"`);
       if (title !== undefined) lines.push(`  set name of n to "${esc(title)}"`);
       lines.push("end tell");
-      await runAppleScript(lines.join("\n"));
-      return textResult(`Updated note "${name}".`);
+      return runAndConfirm(lines.join("\n"), `Updated note "${name}".`);
     },
   );
 
@@ -199,8 +199,7 @@ export function registerNotesTools(server: McpServer) {
     },
     async ({ name }) => {
       const script = `tell application "Notes" to delete (first note whose name is "${esc(name)}")`;
-      await runAppleScript(script);
-      return textResult(`Deleted note "${name}".`);
+      return runAndConfirm(script, `Deleted note "${name}".`);
     },
   );
 }

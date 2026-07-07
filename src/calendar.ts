@@ -2,9 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   runAppleScript,
+  runAndConfirm,
   runNameList,
   esc,
   appleScriptDateLiteral,
+  joinLinefeedScript,
+  scopeExpression,
 } from "./osascript.ts";
 import { textResult, jsonResult } from "./results.ts";
 
@@ -23,10 +26,6 @@ type Recurrence = {
   count?: number;
   until?: string;
 };
-
-function calendarsExpression(calendar?: string): string {
-  return calendar ? `{calendar "${esc(calendar)}"}` : "every calendar";
-}
 
 function setTimeOfDay(varName: string, hour = 0, minute = 0): string {
   return `set hours of ${varName} to ${hour}
@@ -85,6 +84,7 @@ function eventQueryScript(
   dateSetup: string,
   eventFilter: string,
 ): string {
+  const calNameSetup = includeCalendarName ? `set calName to name of cal\n    ` : "";
   const linePrefix = includeCalendarName ? `calName & ": " & ` : "";
 
   return `
@@ -93,14 +93,12 @@ ${dateSetup}
 tell application "Calendar"
   set outputLines to {}
   repeat with cal in ${calendars}
-    set calName to name of cal
-    set recordList to properties of (every event of cal ${eventFilter})
+    ${calNameSetup}set recordList to properties of (every event of cal ${eventFilter})
     repeat with r in recordList
       set end of outputLines to (${linePrefix}summary of r & " | " & (start date of r as text) & " → " & (end date of r as text))
     end repeat
   end repeat
-  set AppleScript's text item delimiters to linefeed
-  outputLines as text
+  ${joinLinefeedScript("outputLines")}
 end tell`;
 }
 
@@ -200,7 +198,7 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
       const eventFilter = `whose start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
       const raw = await runAppleScript(
         eventQueryScript(
-          calendarsExpression(calendar),
+          scopeExpression("calendar", calendar),
           !calendar,
           dateSetup,
           eventFilter,
@@ -266,14 +264,6 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
                 "Optional ISO end date/time. Omit both count and until to repeat indefinitely.",
               ),
           })
-          .refine(
-            (value) =>
-              !(value.count !== undefined && value.until !== undefined),
-            {
-              message:
-                "Use either recurrence.count or recurrence.until, not both",
-            },
-          )
           .optional()
           .describe(
             'Optional recurrence rule. Example: {"frequency":"monthly","interval":4} repeats every 4 months indefinitely.',
@@ -307,11 +297,11 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
         recurrence,
       });
 
-      await runAppleScript(script);
       const recurrenceSuffix = recurrence
         ? ` with recurrence ${calendarRecurrenceRule(recurrence)}`
         : "";
-      return textResult(
+      return runAndConfirm(
+        script,
         `Created event "${title}" on calendar "${calendar}"${recurrenceSuffix}.`,
       );
     },
@@ -342,7 +332,7 @@ set theEnd to theStart + (${daysAhead} * days)`;
       const eventFilter = `whose summary contains "${esc(query)}" and start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
       const raw = await runAppleScript(
         eventQueryScript(
-          calendarsExpression(calendar),
+          scopeExpression("calendar", calendar),
           !calendar,
           dateSetup,
           eventFilter,
@@ -366,8 +356,7 @@ set theEnd to theStart + (${daysAhead} * days)`;
     },
     async ({ calendar, title }) => {
       const script = `tell application "Calendar" to tell calendar "${esc(calendar)}" to delete (first event whose summary is "${esc(title)}")`;
-      await runAppleScript(script);
-      return textResult(`Deleted event "${title}".`);
+      return runAndConfirm(script, `Deleted event "${title}".`);
     },
   );
 }

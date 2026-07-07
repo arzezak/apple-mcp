@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { textResult } from "./results.ts";
 
 function execOsascript(args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -29,6 +30,19 @@ export function runAppleScript(
   return execOsascript(args, timeoutMs);
 }
 
+// Runs a mutating script and turns it into the tool's confirmation result,
+// keeping the "run then confirm" shape in one place instead of every handler.
+export async function runAndConfirm(script: string, message: string) {
+  await runAppleScript(script);
+  return textResult(message);
+}
+
+// AppleScript expression selecting either one named entity or every entity of
+// that kind, e.g. scopeExpression("calendar", "Home") -> {calendar "Home"}.
+export function scopeExpression(kind: string, name?: string): string {
+  return name ? `{${kind} "${esc(name)}"}` : `every ${kind}`;
+}
+
 export function parseList(raw: string): string[] {
   if (!raw || raw === "missing value") return [];
   return raw
@@ -37,16 +51,17 @@ export function parseList(raw: string): string[] {
     .filter(Boolean);
 }
 
-// Build a script that returns an AppleScript list joined by linefeed rather than
+// Script tail that renders a list variable joined by linefeed rather than
 // letting osascript render it with ", " (which is ambiguous: an item may itself
 // contain a comma-space). parseList splits the result back on linefeed.
-export function nameListScript(
-  application: string,
-  listExpression: string,
-): string {
+export function joinLinefeedScript(varName: string): string {
+  return `set AppleScript's text item delimiters to linefeed
+${varName} as text`;
+}
+
+export function nameListScript(application: string, listExpression: string): string {
   return `tell application "${application}" to set resultList to ${listExpression}
-set AppleScript's text item delimiters to linefeed
-resultList as text`;
+${joinLinefeedScript("resultList")}`;
 }
 
 // Runs nameListScript and decodes its output, keeping the linefeed-join protocol

@@ -2,9 +2,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   runAppleScript,
+  runAndConfirm,
   runNameList,
   esc,
   appleScriptDateLiteral,
+  joinLinefeedScript,
 } from "./osascript.ts";
 import { textResult, jsonResult } from "./results.ts";
 
@@ -41,8 +43,7 @@ function incompleteRemindersScript(listName: string): string {
     end try
     set end of outputLines to line_
   end repeat
-  set AppleScript's text item delimiters to linefeed
-  outputLines as text
+  ${joinLinefeedScript("outputLines")}
 end tell`;
 }
 
@@ -76,8 +77,7 @@ function allRemindersScript(listName: string): string {
     end try
     set end of outputLines to line_
   end repeat
-  set AppleScript's text item delimiters to linefeed
-  outputLines as text
+  ${joinLinefeedScript("outputLines")}
 end tell`;
 }
 
@@ -182,8 +182,10 @@ export function registerRemindersTools(server: McpServer) {
         allDay,
         priority,
       });
-      await runAppleScript(script);
-      return textResult(`Created reminder "${name}" in list "${listName}".`);
+      return runAndConfirm(
+        script,
+        `Created reminder "${name}" in list "${listName}".`,
+      );
     },
   );
 
@@ -199,8 +201,7 @@ export function registerRemindersTools(server: McpServer) {
     },
     async ({ listName, name }) => {
       const script = `tell application "Reminders" to tell list "${esc(listName)}" to set completed of (first reminder whose name is "${esc(name)}") to true`;
-      await runAppleScript(script);
-      return textResult(`Completed reminder "${name}".`);
+      return runAndConfirm(script, `Completed reminder "${name}".`);
     },
   );
 
@@ -216,8 +217,7 @@ export function registerRemindersTools(server: McpServer) {
     },
     async ({ listName, name }) => {
       const script = `tell application "Reminders" to delete (first reminder of list "${esc(listName)}" whose name is "${esc(name)}")`;
-      await runAppleScript(script);
-      return textResult(`Deleted reminder "${name}".`);
+      return runAndConfirm(script, `Deleted reminder "${name}".`);
     },
   );
 
