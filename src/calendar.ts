@@ -1,12 +1,28 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runAppleScript, runNameList, esc } from "./osascript.ts";
+import {
+  runAppleScript,
+  runNameList,
+  esc,
+  appleScriptDateLiteral,
+} from "./osascript.ts";
 import { textResult, jsonResult } from "./results.ts";
 
 // Event queries pay a few seconds per calendar for the whose filter, so
 // all-calendars queries on accounts with many calendars exceed the default
 // 30s osascript timeout.
 const EVENT_QUERY_TIMEOUT_MS = 120_000;
+
+const RECURRENCE_FREQUENCIES = ["daily", "weekly", "monthly", "yearly"] as const;
+
+type RecurrenceFrequency = (typeof RECURRENCE_FREQUENCIES)[number];
+
+type Recurrence = {
+  frequency: RecurrenceFrequency;
+  interval: number;
+  count?: number;
+  until?: string;
+};
 
 function calendarsExpression(calendar?: string): string {
   return calendar ? `{calendar "${esc(calendar)}"}` : "every calendar";
@@ -16,6 +32,48 @@ function setTimeOfDay(varName: string, hour = 0, minute = 0): string {
   return `set hours of ${varName} to ${hour}
 set minutes of ${varName} to ${minute}
 set seconds of ${varName} to 0`;
+}
+
+function rruleDate(input: string): string {
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid recurrence until date: ${input}`);
+  }
+
+  const yyyy = String(date.getUTCFullYear()).padStart(4, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const min = String(date.getUTCMinutes()).padStart(2, "0");
+  const ss = String(date.getUTCSeconds()).padStart(2, "0");
+  return `${yyyy}${mm}${dd}T${hh}${min}${ss}Z`;
+}
+
+export function calendarRecurrenceRule(recurrence: Recurrence): string {
+  if (!Number.isInteger(recurrence.interval) || recurrence.interval < 1) {
+    throw new Error("Recurrence interval must be a positive integer.");
+  }
+  if (
+    recurrence.count !== undefined &&
+    (!Number.isInteger(recurrence.count) || recurrence.count < 1)
+  ) {
+    throw new Error("Recurrence count must be a positive integer.");
+  }
+  if (recurrence.count !== undefined && recurrence.until !== undefined) {
+    throw new Error("Recurrence can end with count or until, not both.");
+  }
+
+  const parts = [
+    `FREQ=${recurrence.frequency.toUpperCase()}`,
+    `INTERVAL=${recurrence.interval}`,
+  ];
+  if (recurrence.count !== undefined) {
+    parts.push(`COUNT=${recurrence.count}`);
+  }
+  if (recurrence.until !== undefined) {
+    parts.push(`UNTIL=${rruleDate(recurrence.until)}`);
+  }
+  return parts.join(";");
 }
 
 // Fetches event records with one "properties of" Apple Event per calendar:
@@ -49,6 +107,7 @@ end tell`;
 export function calendarCreateEventScript({
   calendar,
   title,
+  startDate,
   daysFromNow,
   hour,
   minute,
@@ -56,9 +115,11 @@ export function calendarCreateEventScript({
   location,
   notes,
   allDay,
+  recurrence,
 }: {
   calendar: string;
   title: string;
+  startDate?: string;
   daysFromNow: number;
   hour: number;
   minute: number;
@@ -66,21 +127,28 @@ export function calendarCreateEventScript({
   location?: string;
   notes?: string;
   allDay: boolean;
+  recurrence?: Recurrence;
 }): string {
   const props: string[] = [`summary:"${esc(title)}"`];
   if (location) props.push(`location:"${esc(location)}"`);
   if (notes) props.push(`description:"${esc(notes)}"`);
   if (allDay) props.push("allday event:true");
+  if (recurrence) {
+    props.push(`recurrence:"${calendarRecurrenceRule(recurrence)}"`);
+  }
 
   const dateSetup = allDay
     ? `${setTimeOfDay("theStart")}
 set theEnd to theStart + days - 1`
     : `${setTimeOfDay("theStart", hour, minute)}
 set theEnd to theStart + (${durationMinutes} * minutes)`;
+  const startSetup = startDate
+    ? `set theStart to ${appleScriptDateLiteral(startDate)}`
+    : `set theStart to current date
+set theStart to theStart + (${daysFromNow} * days)`;
 
   return `
-set theStart to current date
-set theStart to theStart + (${daysFromNow} * days)
+${startSetup}
 ${dateSetup}
 tell application "Calendar"
   tell calendar "${esc(calendar)}"
@@ -151,6 +219,12 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
       inputSchema: {
         calendar: z.string().describe("Calendar name to create the event in"),
         title: z.string().describe("Event title"),
+        startDate: z
+          .string()
+          .optional()
+          .describe(
+            "Optional ISO start date. When omitted, daysFromNow is used. Timed events still use hour/minute for the time of day.",
+          ),
         daysFromNow: z
           .number()
           .default(0)
@@ -167,11 +241,49 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
           .boolean()
           .default(false)
           .describe("Create as an all-day event"),
+        recurrence: z
+          .object({
+            frequency: z
+              .enum(RECURRENCE_FREQUENCIES)
+              .describe("Repeat frequency: daily, weekly, monthly, or yearly"),
+            interval: z
+              .number()
+              .int()
+              .positive()
+              .describe(
+                "Repeat every N frequency units, e.g. 4 with monthly means every 4 months",
+              ),
+            count: z
+              .number()
+              .int()
+              .positive()
+              .optional()
+              .describe("Optional end after this many occurrences"),
+            until: z
+              .string()
+              .optional()
+              .describe(
+                "Optional ISO end date/time. Omit both count and until to repeat indefinitely.",
+              ),
+          })
+          .refine(
+            (value) =>
+              !(value.count !== undefined && value.until !== undefined),
+            {
+              message:
+                "Use either recurrence.count or recurrence.until, not both",
+            },
+          )
+          .optional()
+          .describe(
+            'Optional recurrence rule. Example: {"frequency":"monthly","interval":4} repeats every 4 months indefinitely.',
+          ),
       },
     },
     async ({
       calendar,
       title,
+      startDate,
       daysFromNow,
       hour,
       minute,
@@ -179,10 +291,12 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
       location,
       notes,
       allDay,
+      recurrence,
     }) => {
       const script = calendarCreateEventScript({
         calendar,
         title,
+        startDate,
         daysFromNow,
         hour,
         minute,
@@ -190,10 +304,16 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
         location,
         notes,
         allDay,
+        recurrence,
       });
 
       await runAppleScript(script);
-      return textResult(`Created event "${title}" on calendar "${calendar}".`);
+      const recurrenceSuffix = recurrence
+        ? ` with recurrence ${calendarRecurrenceRule(recurrence)}`
+        : "";
+      return textResult(
+        `Created event "${title}" on calendar "${calendar}"${recurrenceSuffix}.`,
+      );
     },
   );
 

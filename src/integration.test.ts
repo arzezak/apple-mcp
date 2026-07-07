@@ -464,4 +464,90 @@ end tell`),
     });
     expect(afterDelete).not.toContain(timedTitle);
   });
+
+  test("calendar creates an indefinite every-four-month recurrence", async () => {
+    const title = uniqueName("recurring-event");
+
+    try {
+      await call(handlers, "calendar_create_event", {
+        calendar: TEST_CONTAINER_NAME,
+        title,
+        startDate: "2026-10-01",
+        daysFromNow: 0,
+        hour: 9,
+        minute: 0,
+        durationMinutes: 30,
+        recurrence: {
+          frequency: "monthly",
+          interval: 4,
+        },
+      });
+
+      const recurrence = await runAppleScript(`
+tell application "Calendar"
+  tell calendar "${esc(TEST_CONTAINER_NAME)}"
+    return recurrence of (first event whose summary is "${esc(title)}") as text
+  end tell
+end tell`);
+
+      expect(recurrence).toContain("FREQ=MONTHLY");
+      expect(recurrence).toContain("INTERVAL=4");
+      expect(recurrence).not.toContain("COUNT=");
+      expect(recurrence).not.toContain("UNTIL=");
+    } finally {
+      try {
+        await call(handlers, "calendar_delete_event", {
+          calendar: TEST_CONTAINER_NAME,
+          title,
+        });
+      } catch {
+        // Creation may have failed before there was anything to clean up.
+      }
+    }
+  });
+
+  test("calendar creates an all-day indefinite every-four-month recurrence", async () => {
+    const title = uniqueName("recurring-allday-event");
+
+    try {
+      await call(handlers, "calendar_create_event", {
+        calendar: TEST_CONTAINER_NAME,
+        title,
+        startDate: "2026-10-01",
+        daysFromNow: 0,
+        hour: 0,
+        minute: 0,
+        durationMinutes: 60,
+        allDay: true,
+        recurrence: {
+          frequency: "monthly",
+          interval: 4,
+        },
+      });
+
+      const raw = await runAppleScript(`
+tell application "Calendar"
+  tell calendar "${esc(TEST_CONTAINER_NAME)}"
+    set createdEvent to first event whose summary is "${esc(title)}"
+    return (allday event of createdEvent as text) & linefeed & (recurrence of createdEvent as text)
+  end tell
+end tell`);
+
+      const [allDay, recurrence] = raw.split("\n");
+      expect(allDay).toBe("true");
+      expect(recurrence).toContain("FREQ=MONTHLY");
+      expect(recurrence).toContain("INTERVAL=4");
+      expect(recurrence).not.toContain("COUNT=");
+      expect(recurrence).not.toContain("UNTIL=");
+    } finally {
+      try {
+        await call(handlers, "calendar_delete_event", {
+          calendar: TEST_CONTAINER_NAME,
+          title,
+        });
+      } catch {
+        // Creation may have failed before there was anything to clean up.
+      }
+    }
+  });
 });

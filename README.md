@@ -12,6 +12,21 @@ Requires [Bun](https://bun.sh) and macOS.
 
 **Calendar:** `calendar_list_calendars`, `calendar_list_events`, `calendar_create_event`, `calendar_search_events`, `calendar_delete_event`
 
+`calendar_create_event` accepts an optional `recurrence` object:
+
+```json
+{
+  "frequency": "daily | weekly | monthly | yearly",
+  "interval": 4,
+  "count": 10,
+  "until": "2027-01-15T12:30:00Z"
+}
+```
+
+Omit both `count` and `until` to repeat indefinitely. For example, `{"frequency":"monthly","interval":4}` creates an event that repeats every 4 months with no end date.
+
+It also accepts optional `startDate` for a specific ISO date. When `startDate` is omitted, the existing `daysFromNow` behavior is used.
+
 ## Notes formatting
 
 `notes_create` and `notes_edit` accept markdown in the body, which is auto-converted to formatted HTML for Apple Notes. Supported syntax: `#` headings, `- ` bullet lists, `1.` numbered lists, `**bold**`, `*italic*`, fenced code blocks, and `` `inline code` ``. Existing HTML is passed through unchanged.
