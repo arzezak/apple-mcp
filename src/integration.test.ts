@@ -35,6 +35,46 @@ function cleanupScript(...names: string[]): string {
     .join("\n    ");
 }
 
+// Find-or-create fragments for the Test containers, shared by the identity
+// tests and the tool-handler suite. Each leaves the container in `box`.
+function ensureRemindersListScript(): string {
+  return `try
+    set box to list "${esc(TEST_CONTAINER_NAME)}"
+  on error
+    set box to make new list with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
+  end try`;
+}
+
+function ensureNotesFolderScript(): string {
+  return `if "${esc(TEST_CONTAINER_NAME)}" is not in (name of every folder) then
+    tell default account to make new folder with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
+  end if
+  set box to folder "${esc(TEST_CONTAINER_NAME)}"`;
+}
+
+function ensureCalendarScript(): string {
+  return `if "${esc(TEST_CONTAINER_NAME)}" is not in (name of every calendar) then
+    make new calendar with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
+  end if
+  set box to calendar "${esc(TEST_CONTAINER_NAME)}"`;
+}
+
+// Envelope shared by the identity tests: whatever was created in createdA and
+// createdB is deleted on both the success and error paths, so test data never
+// leaks into the real apps.
+function withCleanup(body: string, returnExpression: string): string {
+  return `set createdA to missing value
+  set createdB to missing value
+  try
+    ${body}
+    ${cleanupScript("createdA", "createdB")}
+    return ${returnExpression}
+  on error errMsg number errNum
+    ${cleanupScript("createdA", "createdB")}
+    error errMsg number errNum
+  end try`;
+}
+
 function expectDifferentIds(first: string, second: string): void {
   expect(first).toBeTruthy();
   expect(second).toBeTruthy();
@@ -62,14 +102,8 @@ describeIntegration("Apple app identity integration", () => {
 
     const raw = await runAppleScript(`
 tell application "Reminders"
-  set createdA to missing value
-  set createdB to missing value
-  try
-    try
-      set box to list "${esc(TEST_CONTAINER_NAME)}"
-    on error
-      set box to make new list with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
-    end try
+  ${withCleanup(
+    `${ensureRemindersListScript()}
 
     tell box
       set createdA to make new reminder with properties {name:"${esc(title)}", body:"${esc(firstBody)}"}
@@ -80,19 +114,9 @@ tell application "Reminders"
     set valueA to id of createdA
     set valueB to id of createdB
     set lookupTitle to name of (first reminder of box whose id is valueB)
-    set lookupId to missing value
-    repeat with candidate in every reminder of box
-      if name of candidate is "${esc(title)}" and body of candidate is "${esc(secondBody)}" then
-        set lookupId to id of candidate
-      end if
-    end repeat
-
-    ${cleanupScript("createdA", "createdB")}
-    return boxId & linefeed & valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId
-  on error errMsg number errNum
-    ${cleanupScript("createdA", "createdB")}
-    error errMsg number errNum
-  end try
+    set lookupId to id of (first reminder of box whose name is "${esc(title)}" and body is "${esc(secondBody)}")`,
+    "boxId & linefeed & valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId",
+  )}
 end tell`, 110_000);
 
     const [listId, firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
@@ -112,20 +136,8 @@ end tell`, 110_000);
 
     const raw = await runAppleScript(`
 tell application "Notes"
-  set createdA to missing value
-  set createdB to missing value
-  try
-    set box to missing value
-    repeat with candidate in every folder
-      if name of candidate is "${esc(TEST_CONTAINER_NAME)}" then
-        set box to candidate
-      end if
-    end repeat
-    if box is missing value then
-      tell default account
-        set box to make new folder with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
-      end tell
-    end if
+  ${withCleanup(
+    `${ensureNotesFolderScript()}
 
     tell box
       set createdA to make new note with properties {name:"${esc(title)}", body:"${esc(firstBody)}"}
@@ -140,14 +152,9 @@ tell application "Notes"
       if name of candidate is "${esc(title)}" and plaintext of candidate contains "${esc(secondMarker)}" then
         set lookupId to id of candidate
       end if
-    end repeat
-
-    ${cleanupScript("createdA", "createdB")}
-    return valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId
-  on error errMsg number errNum
-    ${cleanupScript("createdA", "createdB")}
-    error errMsg number errNum
-  end try
+    end repeat`,
+    "valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId",
+  )}
 end tell`, 110_000);
 
     const [firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
@@ -169,14 +176,8 @@ set seconds of startsAtValue to 0
 set endsAtValue to startsAtValue + (30 * 60)
 
 tell application "Calendar"
-  set createdA to missing value
-  set createdB to missing value
-  try
-    if "${esc(TEST_CONTAINER_NAME)}" is not in (name of every calendar) then
-      set box to make new calendar with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
-    else
-      set box to calendar "${esc(TEST_CONTAINER_NAME)}"
-    end if
+  ${withCleanup(
+    `${ensureCalendarScript()}
 
     tell box
       set createdA to make new event with properties {summary:"${esc(title)}", description:"${esc(firstDescription)}", start date:startsAtValue, end date:endsAtValue}
@@ -186,19 +187,9 @@ tell application "Calendar"
     set valueA to uid of createdA
     set valueB to uid of createdB
     set lookupTitle to summary of (first event of box whose uid is valueB)
-    set lookupId to missing value
-    repeat with candidate in every event of box
-      if summary of candidate is "${esc(title)}" and description of candidate is "${esc(secondDescription)}" then
-        set lookupId to uid of candidate
-      end if
-    end repeat
-
-    ${cleanupScript("createdA", "createdB")}
-    return valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId
-  on error errMsg number errNum
-    ${cleanupScript("createdA", "createdB")}
-    error errMsg number errNum
-  end try
+    set lookupId to uid of (first event of box whose summary is "${esc(title)}" and description is "${esc(secondDescription)}")`,
+    "valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId",
+  )}
 end tell`, 110_000);
 
     const [firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
@@ -221,25 +212,13 @@ describeIntegration("Tool handlers", () => {
     // so spin up all three setup scripts concurrently.
     await Promise.all([
       runAppleScript(`tell application "Reminders"
-  try
-    set box to list "${esc(TEST_CONTAINER_NAME)}"
-  on error
-    make new list with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
-  end try
+  ${ensureRemindersListScript()}
 end tell`),
       runAppleScript(`tell application "Notes"
-  set found to false
-  repeat with candidate in every folder
-    if name of candidate is "${esc(TEST_CONTAINER_NAME)}" then set found to true
-  end repeat
-  if found is false then
-    tell default account to make new folder with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
-  end if
+  ${ensureNotesFolderScript()}
 end tell`),
       runAppleScript(`tell application "Calendar"
-  if "${esc(TEST_CONTAINER_NAME)}" is not in (name of every calendar) then
-    make new calendar with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
-  end if
+  ${ensureCalendarScript()}
 end tell`),
     ]);
   });
@@ -465,9 +444,12 @@ end tell`),
     expect(afterDelete).not.toContain(timedTitle);
   });
 
-  test("calendar creates an indefinite every-four-month recurrence", async () => {
-    const title = uniqueName("recurring-event");
-
+  // Creates an every-four-month recurring event, reads its allday flag and
+  // recurrence straight from Calendar, and always deletes the event.
+  async function roundTripRecurringEvent(
+    title: string,
+    overrides: Record<string, unknown>,
+  ): Promise<{ allDay: string; recurrence: string }> {
     try {
       await call(handlers, "calendar_create_event", {
         calendar: TEST_CONTAINER_NAME,
@@ -481,48 +463,7 @@ end tell`),
           frequency: "monthly",
           interval: 4,
         },
-      });
-
-      const recurrence = await runAppleScript(`
-tell application "Calendar"
-  tell calendar "${esc(TEST_CONTAINER_NAME)}"
-    return recurrence of (first event whose summary is "${esc(title)}") as text
-  end tell
-end tell`);
-
-      expect(recurrence).toContain("FREQ=MONTHLY");
-      expect(recurrence).toContain("INTERVAL=4");
-      expect(recurrence).not.toContain("COUNT=");
-      expect(recurrence).not.toContain("UNTIL=");
-    } finally {
-      try {
-        await call(handlers, "calendar_delete_event", {
-          calendar: TEST_CONTAINER_NAME,
-          title,
-        });
-      } catch {
-        // Creation may have failed before there was anything to clean up.
-      }
-    }
-  });
-
-  test("calendar creates an all-day indefinite every-four-month recurrence", async () => {
-    const title = uniqueName("recurring-allday-event");
-
-    try {
-      await call(handlers, "calendar_create_event", {
-        calendar: TEST_CONTAINER_NAME,
-        title,
-        startDate: "2026-10-01",
-        daysFromNow: 0,
-        hour: 0,
-        minute: 0,
-        durationMinutes: 60,
-        allDay: true,
-        recurrence: {
-          frequency: "monthly",
-          interval: 4,
-        },
+        ...overrides,
       });
 
       const raw = await runAppleScript(`
@@ -534,11 +475,7 @@ tell application "Calendar"
 end tell`);
 
       const [allDay, recurrence] = raw.split("\n");
-      expect(allDay).toBe("true");
-      expect(recurrence).toContain("FREQ=MONTHLY");
-      expect(recurrence).toContain("INTERVAL=4");
-      expect(recurrence).not.toContain("COUNT=");
-      expect(recurrence).not.toContain("UNTIL=");
+      return { allDay, recurrence };
     } finally {
       try {
         await call(handlers, "calendar_delete_event", {
@@ -549,5 +486,29 @@ end tell`);
         // Creation may have failed before there was anything to clean up.
       }
     }
+  }
+
+  function expectIndefiniteEveryFourMonths(recurrence: string): void {
+    expect(recurrence).toContain("FREQ=MONTHLY");
+    expect(recurrence).toContain("INTERVAL=4");
+    expect(recurrence).not.toContain("COUNT=");
+    expect(recurrence).not.toContain("UNTIL=");
+  }
+
+  test("calendar creates an indefinite every-four-month recurrence", async () => {
+    const { recurrence } = await roundTripRecurringEvent(
+      uniqueName("recurring-event"),
+      {},
+    );
+    expectIndefiniteEveryFourMonths(recurrence);
+  });
+
+  test("calendar creates an all-day indefinite every-four-month recurrence", async () => {
+    const { allDay, recurrence } = await roundTripRecurringEvent(
+      uniqueName("recurring-allday-event"),
+      { hour: 0, durationMinutes: 60, allDay: true },
+    );
+    expect(allDay).toBe("true");
+    expectIndefiniteEveryFourMonths(recurrence);
   });
 });

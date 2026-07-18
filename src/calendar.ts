@@ -1,20 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  runAppleScript,
   runAndConfirm,
+  runAndReport,
   runNameList,
-  esc,
+  quoted,
   appleScriptDateLiteral,
   joinLinefeedScript,
   scopeExpression,
+  SLOW_QUERY_TIMEOUT_MS,
 } from "./osascript.ts";
-import { textResult, jsonResult } from "./results.ts";
-
-// Event queries pay a few seconds per calendar for the whose filter, so
-// all-calendars queries on accounts with many calendars exceed the default
-// 30s osascript timeout.
-const EVENT_QUERY_TIMEOUT_MS = 120_000;
+import { jsonResult } from "./results.ts";
 
 const RECURRENCE_FREQUENCIES = ["daily", "weekly", "monthly", "yearly"] as const;
 
@@ -78,12 +74,13 @@ export function calendarRecurrenceRule(recurrence: Recurrence): string {
 // Fetches event records with one "properties of" Apple Event per calendar:
 // the (expensive) whose filter is evaluated once and the loop reads local
 // records, instead of paying one round trip per property per event.
+// Prefixes each line with the calendar name when searching all calendars.
 function eventQueryScript(
-  calendars: string,
-  includeCalendarName: boolean,
+  calendar: string | undefined,
   dateSetup: string,
   eventFilter: string,
 ): string {
+  const includeCalendarName = !calendar;
   const calNameSetup = includeCalendarName ? `set calName to name of cal\n    ` : "";
   const linePrefix = includeCalendarName ? `calName & ": " & ` : "";
 
@@ -92,7 +89,7 @@ ${dateSetup}
 
 tell application "Calendar"
   set outputLines to {}
-  repeat with cal in ${calendars}
+  repeat with cal in ${scopeExpression("calendar", calendar)}
     ${calNameSetup}set recordList to properties of (every event of cal ${eventFilter})
     repeat with r in recordList
       set end of outputLines to (${linePrefix}summary of r & " | " & (start date of r as text) & " → " & (end date of r as text))
@@ -100,6 +97,28 @@ tell application "Calendar"
   end repeat
   ${joinLinefeedScript("outputLines")}
 end tell`;
+}
+
+const DATE_RANGE_FILTER =
+  "start date is greater than or equal to theStart and start date is less than or equal to theEnd";
+
+// Shared run shape for the two event query tools: scopes to one calendar or
+// all, restricts to the theStart..theEnd range set up by dateSetup, and needs
+// the longer timeout because all-calendars queries pay a few seconds per
+// calendar for the whose filter.
+function runEventQuery(
+  calendar: string | undefined,
+  dateSetup: string,
+  extraFilter?: string,
+) {
+  const filterClauses = extraFilter
+    ? `${extraFilter} and ${DATE_RANGE_FILTER}`
+    : DATE_RANGE_FILTER;
+  return runAndReport(
+    eventQueryScript(calendar, dateSetup, `whose ${filterClauses}`),
+    "No events found.",
+    SLOW_QUERY_TIMEOUT_MS,
+  );
 }
 
 export function calendarCreateEventScript({
@@ -127,12 +146,12 @@ export function calendarCreateEventScript({
   allDay: boolean;
   recurrence?: Recurrence;
 }): string {
-  const props: string[] = [`summary:"${esc(title)}"`];
-  if (location) props.push(`location:"${esc(location)}"`);
-  if (notes) props.push(`description:"${esc(notes)}"`);
+  const props: string[] = [`summary:${quoted(title)}`];
+  if (location) props.push(`location:${quoted(location)}`);
+  if (notes) props.push(`description:${quoted(notes)}`);
   if (allDay) props.push("allday event:true");
   if (recurrence) {
-    props.push(`recurrence:"${calendarRecurrenceRule(recurrence)}"`);
+    props.push(`recurrence:${quoted(calendarRecurrenceRule(recurrence))}`);
   }
 
   const dateSetup = allDay
@@ -149,7 +168,7 @@ set theStart to theStart + (${daysFromNow} * days)`;
 ${startSetup}
 ${dateSetup}
 tell application "Calendar"
-  tell calendar "${esc(calendar)}"
+  tell calendar ${quoted(calendar)}
     make new event with properties {start date:theStart, end date:theEnd, ${props.join(", ")}}
   end tell
 end tell`;
@@ -195,17 +214,7 @@ export function registerCalendarTools(server: McpServer) {
 ${setTimeOfDay("midnight")}
 set theStart to midnight - (${daysBack} * days)
 set theEnd to midnight + (${daysAhead} * days) - 1`;
-      const eventFilter = `whose start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
-      const raw = await runAppleScript(
-        eventQueryScript(
-          scopeExpression("calendar", calendar),
-          !calendar,
-          dateSetup,
-          eventFilter,
-        ),
-        EVENT_QUERY_TIMEOUT_MS,
-      );
-      return textResult(raw || "No events found.");
+      return runEventQuery(calendar, dateSetup);
     },
   );
 
@@ -270,39 +279,14 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
           ),
       },
     },
-    async ({
-      calendar,
-      title,
-      startDate,
-      daysFromNow,
-      hour,
-      minute,
-      durationMinutes,
-      location,
-      notes,
-      allDay,
-      recurrence,
-    }) => {
-      const script = calendarCreateEventScript({
-        calendar,
-        title,
-        startDate,
-        daysFromNow,
-        hour,
-        minute,
-        durationMinutes,
-        location,
-        notes,
-        allDay,
-        recurrence,
-      });
-
-      const recurrenceSuffix = recurrence
-        ? ` with recurrence ${calendarRecurrenceRule(recurrence)}`
+    async (input) => {
+      const script = calendarCreateEventScript(input);
+      const recurrenceSuffix = input.recurrence
+        ? ` with recurrence ${calendarRecurrenceRule(input.recurrence)}`
         : "";
       return runAndConfirm(
         script,
-        `Created event "${title}" on calendar "${calendar}"${recurrenceSuffix}.`,
+        `Created event "${input.title}" on calendar "${input.calendar}"${recurrenceSuffix}.`,
       );
     },
   );
@@ -329,17 +313,7 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
       const dateSetup = `set theStart to current date
 ${setTimeOfDay("theStart")}
 set theEnd to theStart + (${daysAhead} * days)`;
-      const eventFilter = `whose summary contains "${esc(query)}" and start date is greater than or equal to theStart and start date is less than or equal to theEnd`;
-      const raw = await runAppleScript(
-        eventQueryScript(
-          scopeExpression("calendar", calendar),
-          !calendar,
-          dateSetup,
-          eventFilter,
-        ),
-        EVENT_QUERY_TIMEOUT_MS,
-      );
-      return textResult(raw || "No events found.");
+      return runEventQuery(calendar, dateSetup, `summary contains ${quoted(query)}`);
     },
   );
 
@@ -355,7 +329,7 @@ set theEnd to theStart + (${daysAhead} * days)`;
       },
     },
     async ({ calendar, title }) => {
-      const script = `tell application "Calendar" to tell calendar "${esc(calendar)}" to delete (first event whose summary is "${esc(title)}")`;
+      const script = `tell application "Calendar" to tell calendar ${quoted(calendar)} to delete (first event whose summary is ${quoted(title)})`;
       return runAndConfirm(script, `Deleted event "${title}".`);
     },
   );

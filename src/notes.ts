@@ -3,8 +3,9 @@ import { z } from "zod";
 import {
   runAppleScript,
   runAndConfirm,
+  runAndReport,
   runNameList,
-  esc,
+  quoted,
   joinLinefeedScript,
   scopeExpression,
 } from "./osascript.ts";
@@ -56,8 +57,7 @@ export function registerNotesTools(server: McpServer) {
       },
     },
     async ({ folder }) => {
-      const raw = await runAppleScript(buildNotesListScript(folder));
-      return textResult(raw || "No notes found.");
+      return runAndReport(buildNotesListScript(folder), "No notes found.");
     },
   );
 
@@ -77,7 +77,7 @@ export function registerNotesTools(server: McpServer) {
     },
     async ({ name, html }) => {
       const prop = html ? "body" : "plaintext";
-      const script = `tell application "Notes" to ${prop} of first note whose name is "${esc(name)}"`;
+      const script = `tell application "Notes" to ${prop} of first note whose name is ${quoted(name)}`;
       const raw = await runAppleScript(script);
       return textResult(raw);
     },
@@ -100,8 +100,8 @@ export function registerNotesTools(server: McpServer) {
     },
     async ({ title, body, folder }) => {
       const htmlBody = markdownToHtml(body);
-      const target = folder ? `tell folder "${esc(folder)}" to ` : "";
-      const script = `tell application "Notes" to ${target}make new note with properties {name:"${esc(title)}", body:"${esc(htmlBody)}"}`;
+      const target = folder ? `tell folder ${quoted(folder)} to ` : "";
+      const script = `tell application "Notes" to ${target}make new note with properties {name:${quoted(title)}, body:${quoted(htmlBody)}}`;
       return runAndConfirm(
         script,
         `Created note "${title}"${folder ? ` in folder "${folder}"` : ""}.`,
@@ -130,12 +130,12 @@ export function registerNotesTools(server: McpServer) {
     async ({ query, searchContent, folder }) => {
       const field = searchContent ? "plaintext" : "name";
       const scope = folder
-        ? `every note in folder "${esc(folder)}"`
+        ? `every note in folder ${quoted(folder)}`
         : "every note";
       return jsonResult(
         await runNameList(
           "Notes",
-          `name of (${scope} whose ${field} contains "${esc(query)}")`,
+          `name of (${scope} whose ${field} contains ${quoted(query)})`,
         ),
       );
     },
@@ -152,7 +152,7 @@ export function registerNotesTools(server: McpServer) {
       },
     },
     async ({ name, targetFolder }) => {
-      const script = `tell application "Notes" to move (first note whose name is "${esc(name)}") to folder "${esc(targetFolder)}"`;
+      const script = `tell application "Notes" to move (first note whose name is ${quoted(name)}) to folder ${quoted(targetFolder)}`;
       return runAndConfirm(script, `Moved note "${name}" to folder "${targetFolder}".`);
     },
   );
@@ -178,11 +178,11 @@ export function registerNotesTools(server: McpServer) {
       }
       const lines = [
         `tell application "Notes"`,
-        `  set n to first note whose name is "${esc(name)}"`,
+        `  set n to first note whose name is ${quoted(name)}`,
       ];
       if (body !== undefined)
-        lines.push(`  set body of n to "${esc(markdownToHtml(body))}"`);
-      if (title !== undefined) lines.push(`  set name of n to "${esc(title)}"`);
+        lines.push(`  set body of n to ${quoted(markdownToHtml(body))}`);
+      if (title !== undefined) lines.push(`  set name of n to ${quoted(title)}`);
       lines.push("end tell");
       return runAndConfirm(lines.join("\n"), `Updated note "${name}".`);
     },
@@ -198,7 +198,7 @@ export function registerNotesTools(server: McpServer) {
       },
     },
     async ({ name }) => {
-      const script = `tell application "Notes" to delete (first note whose name is "${esc(name)}")`;
+      const script = `tell application "Notes" to delete (first note whose name is ${quoted(name)})`;
       return runAndConfirm(script, `Deleted note "${name}".`);
     },
   );

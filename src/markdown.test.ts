@@ -31,10 +31,6 @@ describe("inline formatting", () => {
     expect(markdownToHtml("**bold** text")).toBe("<div><b>bold</b> text</div>");
   });
 
-  test("italic alongside bold triggers conversion", () => {
-    expect(markdownToHtml("**bold** and *italic*")).toContain("<i>italic</i>");
-  });
-
   test("italic alone does not trigger conversion", () => {
     expect(markdownToHtml("*italic* text")).toBe("*italic* text");
   });

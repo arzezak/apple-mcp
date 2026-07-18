@@ -1,20 +1,52 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  runAppleScript,
   runAndConfirm,
+  runAndReport,
   runNameList,
-  esc,
+  quoted,
   appleScriptDateLiteral,
+  hasTimeComponent,
   joinLinefeedScript,
+  SLOW_QUERY_TIMEOUT_MS,
 } from "./osascript.ts";
-import { textResult, jsonResult } from "./results.ts";
-
-const TIME_COMPONENT_RE =
-  /(?:[ T]\d{1,2}:\d{2}(?::\d{2})?\b|\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b)/i;
+import { jsonResult } from "./results.ts";
 
 function shouldUseAllDayDueDate(dueDate: string, allDay: boolean): boolean {
-  return allDay || !TIME_COMPONENT_RE.test(dueDate);
+  return allDay || !hasTimeComponent(dueDate);
+}
+
+const PROPERTY_LIST_VARS = {
+  name: "nameList",
+  "due date": "dueDateList",
+  "allday due date": "allDayDueDateList",
+  priority: "priorityList",
+  body: "bodyList",
+} as const;
+
+type ReminderProperty = keyof typeof PROPERTY_LIST_VARS;
+
+// Loop body shared by the two list scripts below; read maps a reminder
+// property to the AppleScript expression that reads it for the current
+// iteration, so both fetch shapes render identical lines.
+function reminderLineStatements(
+  read: (property: ReminderProperty) => string,
+): string {
+  return `set line_ to "- " & ${read("name")}
+    try
+      set d to ${read("due date")}
+      if d is missing value then set d to ${read("allday due date")}
+      if d is not missing value then set line_ to line_ & " | due: " & (d as text)
+    end try
+    try
+      set p to ${read("priority")}
+      if p is not 0 then set line_ to line_ & " | priority: " & p
+    end try
+    try
+      set b to ${read("body")}
+      if b is not missing value and b is not "" then set line_ to line_ & " | notes: " & b
+    end try
+    set end of outputLines to line_`;
 }
 
 // Fastest measured shape when filtering: "properties of" evaluates the
@@ -22,26 +54,12 @@ function shouldUseAllDayDueDate(dueDate: string, allDay: boolean): boolean {
 // per-property fetches re-evaluate the filter four times.
 function incompleteRemindersScript(listName: string): string {
   return `tell application "Reminders"
-  tell list "${esc(listName)}"
+  tell list ${quoted(listName)}
     set recordList to properties of (every reminder whose completed is false)
   end tell
   set outputLines to {}
   repeat with r in recordList
-    set line_ to "- " & name of r
-    try
-      set d to due date of r
-      if d is missing value then set d to allday due date of r
-      if d is not missing value then set line_ to line_ & " | due: " & (d as text)
-    end try
-    try
-      set p to priority of r
-      if p is not 0 then set line_ to line_ & " | priority: " & p
-    end try
-    try
-      set b to body of r
-      if b is not missing value and b is not "" then set line_ to line_ & " | notes: " & b
-    end try
-    set end of outputLines to line_
+    ${reminderLineStatements((property) => `${property} of r`)}
   end repeat
   ${joinLinefeedScript("outputLines")}
 end tell`;
@@ -52,7 +70,7 @@ end tell`;
 // records for every completed reminder come back too.
 function allRemindersScript(listName: string): string {
   return `tell application "Reminders"
-  tell list "${esc(listName)}"
+  tell list ${quoted(listName)}
     set nameList to name of every reminder
     set bodyList to body of every reminder
     set dueDateList to due date of every reminder
@@ -61,21 +79,7 @@ function allRemindersScript(listName: string): string {
   end tell
   set outputLines to {}
   repeat with i from 1 to count of nameList
-    set line_ to "- " & item i of nameList
-    try
-      set d to item i of dueDateList
-      if d is missing value then set d to item i of allDayDueDateList
-      if d is not missing value then set line_ to line_ & " | due: " & (d as text)
-    end try
-    try
-      set p to item i of priorityList
-      if p is not 0 then set line_ to line_ & " | priority: " & p
-    end try
-    try
-      set b to item i of bodyList
-      if b is not missing value and b is not "" then set line_ to line_ & " | notes: " & b
-    end try
-    set end of outputLines to line_
+    ${reminderLineStatements((property) => `item i of ${PROPERTY_LIST_VARS[property]}`)}
   end repeat
   ${joinLinefeedScript("outputLines")}
 end tell`;
@@ -96,8 +100,8 @@ export function reminderCreateScript({
   allDay: boolean;
   priority?: number;
 }): string {
-  const props: string[] = [`name:"${esc(name)}"`];
-  if (notes) props.push(`body:"${esc(notes)}"`);
+  const props: string[] = [`name:${quoted(name)}`];
+  if (notes) props.push(`body:${quoted(notes)}`);
   if (dueDate) {
     const dueDateProperty = shouldUseAllDayDueDate(dueDate, allDay)
       ? "allday due date"
@@ -106,7 +110,7 @@ export function reminderCreateScript({
   }
   if (priority !== undefined) props.push(`priority:${priority}`);
 
-  return `tell application "Reminders" to tell list "${esc(listName)}" to make new reminder with properties {${props.join(", ")}}`;
+  return `tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${props.join(", ")}}`;
 }
 
 export function registerRemindersTools(server: McpServer) {
@@ -139,8 +143,7 @@ export function registerRemindersTools(server: McpServer) {
       const script = includeCompleted
         ? allRemindersScript(listName)
         : incompleteRemindersScript(listName);
-      const raw = await runAppleScript(script);
-      return textResult(raw || "No reminders found.");
+      return runAndReport(script, "No reminders found.");
     },
   );
 
@@ -173,18 +176,10 @@ export function registerRemindersTools(server: McpServer) {
           .describe("Priority: 0=none, 1-4=high, 5=medium, 6-9=low"),
       },
     },
-    async ({ listName, name, notes, dueDate, allDay, priority }) => {
-      const script = reminderCreateScript({
-        listName,
-        name,
-        notes,
-        dueDate,
-        allDay,
-        priority,
-      });
+    async (input) => {
       return runAndConfirm(
-        script,
-        `Created reminder "${name}" in list "${listName}".`,
+        reminderCreateScript(input),
+        `Created reminder "${input.name}" in list "${input.listName}".`,
       );
     },
   );
@@ -200,7 +195,7 @@ export function registerRemindersTools(server: McpServer) {
       },
     },
     async ({ listName, name }) => {
-      const script = `tell application "Reminders" to tell list "${esc(listName)}" to set completed of (first reminder whose name is "${esc(name)}") to true`;
+      const script = `tell application "Reminders" to tell list ${quoted(listName)} to set completed of (first reminder whose name is ${quoted(name)}) to true`;
       return runAndConfirm(script, `Completed reminder "${name}".`);
     },
   );
@@ -216,7 +211,7 @@ export function registerRemindersTools(server: McpServer) {
       },
     },
     async ({ listName, name }) => {
-      const script = `tell application "Reminders" to delete (first reminder of list "${esc(listName)}" whose name is "${esc(name)}")`;
+      const script = `tell application "Reminders" to delete (first reminder of list ${quoted(listName)} whose name is ${quoted(name)})`;
       return runAndConfirm(script, `Deleted reminder "${name}".`);
     },
   );
@@ -242,8 +237,8 @@ export function registerRemindersTools(server: McpServer) {
       return jsonResult(
         await runNameList(
           "Reminders",
-          `name of (every reminder whose name contains "${esc(query)}"${completedClause})`,
-          120_000,
+          `name of (every reminder whose name contains ${quoted(query)}${completedClause})`,
+          SLOW_QUERY_TIMEOUT_MS,
         ),
       );
     },
