@@ -12,8 +12,7 @@ export function markdownToHtml(text: string): string {
   while (i < lines.length) {
     i =
       consumeFencedCodeBlock(lines, i, output) ??
-      consumeBulletBlock(lines, i, output) ??
-      consumeNumberedBlock(lines, i, output) ??
+      consumeListBlock(lines, i, output) ??
       consumeSingleLine(lines, i, output);
   }
 
@@ -66,35 +65,25 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function consumeBulletBlock(
-  lines: string[],
-  i: number,
-  output: string[],
-): number | null {
-  if (!isBulletLine(lines[i])) return null;
-  output.push("<ul>");
-  while (i < lines.length && isBulletLine(lines[i])) {
-    const content = lines[i].replace(/^[-*]\s+/, "");
-    output.push(`<li>${convertInlineFormatting(content)}</li>`);
-    i++;
-  }
-  output.push("</ul>");
-  return i;
-}
+const LIST_KINDS = [
+  { tag: "ul", marker: /^[-*]\s+/ },
+  { tag: "ol", marker: /^\d+\.\s+/ },
+];
 
-function consumeNumberedBlock(
+function consumeListBlock(
   lines: string[],
   i: number,
   output: string[],
 ): number | null {
-  if (!isNumberedLine(lines[i])) return null;
-  output.push("<ol>");
-  while (i < lines.length && isNumberedLine(lines[i])) {
-    const content = lines[i].replace(/^\d+\.\s+/, "");
+  const kind = LIST_KINDS.find((k) => k.marker.test(lines[i]));
+  if (!kind) return null;
+  output.push(`<${kind.tag}>`);
+  while (i < lines.length && kind.marker.test(lines[i])) {
+    const content = lines[i].replace(kind.marker, "");
     output.push(`<li>${convertInlineFormatting(content)}</li>`);
     i++;
   }
-  output.push("</ol>");
+  output.push(`</${kind.tag}>`);
   return i;
 }
 
@@ -114,12 +103,4 @@ function consumeSingleLine(
     output.push(`<div>${convertInlineFormatting(line)}</div>`);
   }
   return i + 1;
-}
-
-function isBulletLine(line: string): boolean {
-  return /^[-*]\s+/.test(line);
-}
-
-function isNumberedLine(line: string): boolean {
-  return /^\d+\.\s+/.test(line);
 }

@@ -92,31 +92,6 @@ const MONTH_NAMES = [
   "December",
 ];
 
-function isValidDateParts(
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-  minute: number,
-  second: number,
-): boolean {
-  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day &&
-    date.getUTCHours() === hour &&
-    date.getUTCMinutes() === minute &&
-    date.getUTCSeconds() === second
-  );
-}
-
-function appleScriptTime(hour: number, minute: number, second: number): string {
-  const suffix = hour >= 12 ? "PM" : "AM";
-  const hour12 = hour % 12 || 12;
-  return `${hour12}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")} ${suffix}`;
-}
-
 export function appleScriptDateLiteral(input: string): string {
   const match =
     /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(
@@ -124,19 +99,16 @@ export function appleScriptDateLiteral(input: string): string {
     );
   if (!match) return `date ${quoted(input)}`;
 
-  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw] = match;
-  const year = Number(yearRaw);
-  const month = Number(monthRaw);
-  const day = Number(dayRaw);
-  const hour = hourRaw === undefined ? 0 : Number(hourRaw);
-  const minute = minuteRaw === undefined ? 0 : Number(minuteRaw);
-  const second = secondRaw === undefined ? 0 : Number(secondRaw);
-
-  if (!isValidDateParts(year, month, day, hour, minute, second)) {
+  const [, year, month, day, hour = "00", minute = "00", second = "00"] = match;
+  const iso = `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime()) || date.toISOString() !== iso) {
     throw new Error(`Invalid ISO date: ${input}`);
   }
 
-  return `date "${day} ${MONTH_NAMES[month - 1]} ${year} at ${appleScriptTime(hour, minute, second)}"`;
+  const h = Number(hour);
+  const time = `${h % 12 || 12}:${minute}:${second} ${h >= 12 ? "PM" : "AM"}`;
+  return `date "${Number(day)} ${MONTH_NAMES[Number(month) - 1]} ${year} at ${time}"`;
 }
 
 const TIME_COMPONENT_RE =
@@ -150,6 +122,6 @@ export function quoted(s: string): string {
   return `"${esc(s)}"`;
 }
 
-export function esc(s: string): string {
+function esc(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

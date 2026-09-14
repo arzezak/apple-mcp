@@ -12,16 +12,32 @@ import {
 } from "./osascript.ts";
 import { jsonResult } from "./results.ts";
 
-const RECURRENCE_FREQUENCIES = ["daily", "weekly", "monthly", "yearly"] as const;
+const recurrenceSchema = z.object({
+  frequency: z
+    .enum(["daily", "weekly", "monthly", "yearly"])
+    .describe("Repeat frequency: daily, weekly, monthly, or yearly"),
+  interval: z
+    .number()
+    .int()
+    .positive()
+    .describe(
+      "Repeat every N frequency units, e.g. 4 with monthly means every 4 months",
+    ),
+  count: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Optional end after this many occurrences"),
+  until: z
+    .string()
+    .optional()
+    .describe(
+      "Optional ISO end date/time. Omit both count and until to repeat indefinitely.",
+    ),
+});
 
-type RecurrenceFrequency = (typeof RECURRENCE_FREQUENCIES)[number];
-
-type Recurrence = {
-  frequency: RecurrenceFrequency;
-  interval: number;
-  count?: number;
-  until?: string;
-};
+type Recurrence = z.infer<typeof recurrenceSchema>;
 
 function setTimeOfDay(varName: string, hour = 0, minute = 0): string {
   return `set hours of ${varName} to ${hour}
@@ -34,14 +50,7 @@ function rruleDate(input: string): string {
   if (Number.isNaN(date.getTime())) {
     throw new Error(`Invalid recurrence until date: ${input}`);
   }
-
-  const yyyy = String(date.getUTCFullYear()).padStart(4, "0");
-  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(date.getUTCDate()).padStart(2, "0");
-  const hh = String(date.getUTCHours()).padStart(2, "0");
-  const min = String(date.getUTCMinutes()).padStart(2, "0");
-  const ss = String(date.getUTCSeconds()).padStart(2, "0");
-  return `${yyyy}${mm}${dd}T${hh}${min}${ss}Z`;
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
 export function calendarRecurrenceRule(recurrence: Recurrence): string {
@@ -100,19 +109,21 @@ tell application "Calendar"
 end tell`;
 }
 
-const DATE_RANGE_FILTER =
-  "start date is greater than or equal to theStart and start date is less than or equal to theEnd";
-
 function runEventQuery(
   calendar: string | undefined,
-  dateSetup: string,
+  daysBack: number,
+  daysAhead: number,
   extraFilter?: string,
 ) {
-  const filterClauses = extraFilter
-    ? `${extraFilter} and ${DATE_RANGE_FILTER}`
-    : DATE_RANGE_FILTER;
+  const dateSetup = `set theStart to current date
+${setTimeOfDay("theStart")}
+set theEnd to theStart + (${daysAhead} * days) - 1
+set theStart to theStart - (${daysBack} * days)`;
+  const filter =
+    "start date is greater than or equal to theStart and start date is less than or equal to theEnd" +
+    (extraFilter ? ` and ${extraFilter}` : "");
   return runAndReport(
-    eventQueryScript(calendar, dateSetup, `whose ${filterClauses}`),
+    eventQueryScript(calendar, dateSetup, `whose ${filter}`),
     "No events found.",
     SLOW_QUERY_TIMEOUT_MS,
   );
@@ -129,7 +140,7 @@ export function calendarCreateEventScript({
   location,
   notes,
   allDay,
-  recurrence,
+  recurrenceRule,
 }: {
   calendar: string;
   title: string;
@@ -141,15 +152,13 @@ export function calendarCreateEventScript({
   location?: string;
   notes?: string;
   allDay: boolean;
-  recurrence?: Recurrence;
+  recurrenceRule?: string;
 }): string {
   const props: string[] = [`summary:${quoted(title)}`];
   if (location) props.push(`location:${quoted(location)}`);
   if (notes) props.push(`description:${quoted(notes)}`);
   if (allDay) props.push("allday event:true");
-  if (recurrence) {
-    props.push(`recurrence:${quoted(calendarRecurrenceRule(recurrence))}`);
-  }
+  if (recurrenceRule) props.push(`recurrence:${quoted(recurrenceRule)}`);
 
   const dateSetup = allDay
     ? `${setTimeOfDay("theStart")}
@@ -171,6 +180,11 @@ tell application "Calendar"
 end tell`;
 }
 
+const calendarField = z
+  .string()
+  .optional()
+  .describe("Calendar name. Omit to search all calendars.");
+
 export function registerCalendarTools(server: McpServer) {
   server.registerTool(
     "calendar_list_calendars",
@@ -190,10 +204,7 @@ export function registerCalendarTools(server: McpServer) {
       description:
         "List events for a date range. Defaults to today. Can scope to a specific calendar or search all.",
       inputSchema: {
-        calendar: z
-          .string()
-          .optional()
-          .describe("Calendar name. Omit to search all calendars."),
+        calendar: calendarField,
         daysAhead: z
           .number()
           .default(1)
@@ -207,11 +218,7 @@ export function registerCalendarTools(server: McpServer) {
       },
     },
     async ({ calendar, daysAhead, daysBack }) => {
-      const dateSetup = `set midnight to current date
-${setTimeOfDay("midnight")}
-set theStart to midnight - (${daysBack} * days)
-set theEnd to midnight + (${daysAhead} * days) - 1`;
-      return runEventQuery(calendar, dateSetup);
+      return runEventQuery(calendar, daysBack, daysAhead);
     },
   );
 
@@ -245,45 +252,20 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
           .boolean()
           .default(false)
           .describe("Create as an all-day event"),
-        recurrence: z
-          .object({
-            frequency: z
-              .enum(RECURRENCE_FREQUENCIES)
-              .describe("Repeat frequency: daily, weekly, monthly, or yearly"),
-            interval: z
-              .number()
-              .int()
-              .positive()
-              .describe(
-                "Repeat every N frequency units, e.g. 4 with monthly means every 4 months",
-              ),
-            count: z
-              .number()
-              .int()
-              .positive()
-              .optional()
-              .describe("Optional end after this many occurrences"),
-            until: z
-              .string()
-              .optional()
-              .describe(
-                "Optional ISO end date/time. Omit both count and until to repeat indefinitely.",
-              ),
-          })
+        recurrence: recurrenceSchema
           .optional()
           .describe(
             'Optional recurrence rule. Example: {"frequency":"monthly","interval":4} repeats every 4 months indefinitely.',
           ),
       },
     },
-    async (input) => {
-      const script = calendarCreateEventScript(input);
-      const recurrenceSuffix = input.recurrence
-        ? ` with recurrence ${calendarRecurrenceRule(input.recurrence)}`
-        : "";
+    async ({ recurrence, ...input }) => {
+      const recurrenceRule =
+        recurrence && calendarRecurrenceRule(recurrence);
+      const suffix = recurrenceRule ? ` with recurrence ${recurrenceRule}` : "";
       return runAndConfirm(
-        script,
-        `Created event "${input.title}" on calendar "${input.calendar}"${recurrenceSuffix}.`,
+        calendarCreateEventScript({ ...input, recurrenceRule }),
+        `Created event "${input.title}" on calendar "${input.calendar}"${suffix}.`,
       );
     },
   );
@@ -296,10 +278,7 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
         "Search for events by name. Scopes to a specific calendar and upcoming 30 days by default.",
       inputSchema: {
         query: z.string().describe("Search term to match in event titles"),
-        calendar: z
-          .string()
-          .optional()
-          .describe("Calendar name. Omit to search all calendars."),
+        calendar: calendarField,
         daysAhead: z
           .number()
           .default(30)
@@ -307,10 +286,7 @@ set theEnd to midnight + (${daysAhead} * days) - 1`;
       },
     },
     async ({ query, calendar, daysAhead }) => {
-      const dateSetup = `set theStart to current date
-${setTimeOfDay("theStart")}
-set theEnd to theStart + (${daysAhead} * days)`;
-      return runEventQuery(calendar, dateSetup, `summary contains ${quoted(query)}`);
+      return runEventQuery(calendar, 0, daysAhead, `summary contains ${quoted(query)}`);
     },
   );
 

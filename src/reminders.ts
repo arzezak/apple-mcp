@@ -12,10 +12,6 @@ import {
 } from "./osascript.ts";
 import { jsonResult } from "./results.ts";
 
-function shouldUseAllDayDueDate(dueDate: string, allDay: boolean): boolean {
-  return allDay || !hasTimeComponent(dueDate);
-}
-
 const PROPERTY_LIST_VARS = {
   name: "nameList",
   "due date": "dueDateList",
@@ -98,15 +94,16 @@ export function reminderCreateScript({
   const props: string[] = [`name:${quoted(name)}`];
   if (notes) props.push(`body:${quoted(notes)}`);
   if (dueDate) {
-    const dueDateProperty = shouldUseAllDayDueDate(dueDate, allDay)
-      ? "allday due date"
-      : "due date";
+    const dueDateProperty =
+      allDay || !hasTimeComponent(dueDate) ? "allday due date" : "due date";
     props.push(`${dueDateProperty}:${appleScriptDateLiteral(dueDate)}`);
   }
   if (priority !== undefined) props.push(`priority:${priority}`);
 
   return `tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${props.join(", ")}}`;
 }
+
+const listNameField = z.string().describe("Name of the reminder list");
 
 export function registerRemindersTools(server: McpServer) {
   server.registerTool(
@@ -127,7 +124,7 @@ export function registerRemindersTools(server: McpServer) {
       description:
         "List reminders in a specific list. Returns name, due date, priority, and notes for each.",
       inputSchema: {
-        listName: z.string().describe("Name of the reminder list"),
+        listName: listNameField,
         includeCompleted: z
           .boolean()
           .default(false)
@@ -148,7 +145,7 @@ export function registerRemindersTools(server: McpServer) {
       title: "Create Reminder",
       description: "Create a new reminder in Apple Reminders",
       inputSchema: {
-        listName: z.string().describe("Name of the reminder list"),
+        listName: listNameField,
         name: z.string().describe("Reminder title"),
         notes: z.string().optional().describe("Notes/body for the reminder"),
         dueDate: z
@@ -185,7 +182,7 @@ export function registerRemindersTools(server: McpServer) {
       title: "Complete Reminder",
       description: "Mark a reminder as completed",
       inputSchema: {
-        listName: z.string().describe("Name of the reminder list"),
+        listName: listNameField,
         name: z.string().describe("Exact name of the reminder to complete"),
       },
     },
@@ -201,7 +198,7 @@ export function registerRemindersTools(server: McpServer) {
       title: "Delete Reminder",
       description: "Delete a reminder from a list",
       inputSchema: {
-        listName: z.string().describe("Name of the reminder list"),
+        listName: listNameField,
         name: z.string().describe("Exact name of the reminder to delete"),
       },
     },

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { esc, runAppleScript } from "./osascript.ts";
+import { quoted, runAppleScript } from "./osascript.ts";
 import { registerCalendarTools } from "./calendar.ts";
 import { registerNotesTools } from "./notes.ts";
 import { registerRemindersTools } from "./reminders.ts";
@@ -29,43 +29,33 @@ function uniqueName(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function cleanupScript(...names: string[]): string {
-  return names
-    .map((name) => `if ${name} is not missing value then delete ${name}`)
-    .join("\n    ");
-}
+const CONTAINERS = {
+  Reminders: { kind: "list", make: "" },
+  Notes: { kind: "folder", make: "tell default account to " },
+  Calendar: { kind: "calendar", make: "" },
+} as const;
 
-function ensureRemindersListScript(): string {
-  return `try
-    set box to list "${esc(TEST_CONTAINER_NAME)}"
-  on error
-    set box to make new list with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
-  end try`;
-}
-
-function ensureNotesFolderScript(): string {
-  return `if "${esc(TEST_CONTAINER_NAME)}" is not in (name of every folder) then
-    tell default account to make new folder with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
+function ensureContainerScript(app: keyof typeof CONTAINERS): string {
+  const { kind, make } = CONTAINERS[app];
+  const name = quoted(TEST_CONTAINER_NAME);
+  return `if ${name} is not in (name of every ${kind}) then
+    ${make}make new ${kind} with properties {name:${name}}
   end if
-  set box to folder "${esc(TEST_CONTAINER_NAME)}"`;
+  set box to ${kind} ${name}`;
 }
 
-function ensureCalendarScript(): string {
-  return `if "${esc(TEST_CONTAINER_NAME)}" is not in (name of every calendar) then
-    make new calendar with properties {name:"${esc(TEST_CONTAINER_NAME)}"}
-  end if
-  set box to calendar "${esc(TEST_CONTAINER_NAME)}"`;
-}
+const CLEANUP = `if createdA is not missing value then delete createdA
+    if createdB is not missing value then delete createdB`;
 
 function withCleanup(body: string, returnExpression: string): string {
   return `set createdA to missing value
   set createdB to missing value
   try
     ${body}
-    ${cleanupScript("createdA", "createdB")}
+    ${CLEANUP}
     return ${returnExpression}
   on error errMsg number errNum
-    ${cleanupScript("createdA", "createdB")}
+    ${CLEANUP}
     error errMsg number errNum
   end try`;
 }
@@ -96,18 +86,18 @@ describeIntegration("Apple app identity integration", () => {
     const raw = await runAppleScript(`
 tell application "Reminders"
   ${withCleanup(
-    `${ensureRemindersListScript()}
+    `${ensureContainerScript("Reminders")}
 
     tell box
-      set createdA to make new reminder with properties {name:"${esc(title)}", body:"${esc(firstBody)}"}
-      set createdB to make new reminder with properties {name:"${esc(title)}", body:"${esc(secondBody)}"}
+      set createdA to make new reminder with properties {name:${quoted(title)}, body:${quoted(firstBody)}}
+      set createdB to make new reminder with properties {name:${quoted(title)}, body:${quoted(secondBody)}}
     end tell
 
     set boxId to id of box
     set valueA to id of createdA
     set valueB to id of createdB
     set lookupTitle to name of (first reminder of box whose id is valueB)
-    set lookupId to id of (first reminder of box whose name is "${esc(title)}" and body is "${esc(secondBody)}")`,
+    set lookupId to id of (first reminder of box whose name is ${quoted(title)} and body is ${quoted(secondBody)})`,
     "boxId & linefeed & valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId",
   )}
 end tell`, 110_000);
@@ -130,11 +120,11 @@ end tell`, 110_000);
     const raw = await runAppleScript(`
 tell application "Notes"
   ${withCleanup(
-    `${ensureNotesFolderScript()}
+    `${ensureContainerScript("Notes")}
 
     tell box
-      set createdA to make new note with properties {name:"${esc(title)}", body:"${esc(firstBody)}"}
-      set createdB to make new note with properties {name:"${esc(title)}", body:"${esc(secondBody)}"}
+      set createdA to make new note with properties {name:${quoted(title)}, body:${quoted(firstBody)}}
+      set createdB to make new note with properties {name:${quoted(title)}, body:${quoted(secondBody)}}
     end tell
 
     set valueA to id of createdA
@@ -142,7 +132,7 @@ tell application "Notes"
     set lookupTitle to name of (first note whose id is valueB)
     set lookupId to missing value
     repeat with candidate in every note of box
-      if name of candidate is "${esc(title)}" and plaintext of candidate contains "${esc(secondMarker)}" then
+      if name of candidate is ${quoted(title)} and plaintext of candidate contains ${quoted(secondMarker)} then
         set lookupId to id of candidate
       end if
     end repeat`,
@@ -170,17 +160,17 @@ set endsAtValue to startsAtValue + (30 * 60)
 
 tell application "Calendar"
   ${withCleanup(
-    `${ensureCalendarScript()}
+    `${ensureContainerScript("Calendar")}
 
     tell box
-      set createdA to make new event with properties {summary:"${esc(title)}", description:"${esc(firstDescription)}", start date:startsAtValue, end date:endsAtValue}
-      set createdB to make new event with properties {summary:"${esc(title)}", description:"${esc(secondDescription)}", start date:startsAtValue, end date:endsAtValue}
+      set createdA to make new event with properties {summary:${quoted(title)}, description:${quoted(firstDescription)}, start date:startsAtValue, end date:endsAtValue}
+      set createdB to make new event with properties {summary:${quoted(title)}, description:${quoted(secondDescription)}, start date:startsAtValue, end date:endsAtValue}
     end tell
 
     set valueA to uid of createdA
     set valueB to uid of createdB
     set lookupTitle to summary of (first event of box whose uid is valueB)
-    set lookupId to uid of (first event of box whose summary is "${esc(title)}" and description is "${esc(secondDescription)}")`,
+    set lookupId to uid of (first event of box whose summary is ${quoted(title)} and description is ${quoted(secondDescription)})`,
     "valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId",
   )}
 end tell`, 110_000);
@@ -199,17 +189,13 @@ describeIntegration("Tool handlers", () => {
   beforeAll(async () => {
     handlers = buildHandlers();
 
-    await Promise.all([
-      runAppleScript(`tell application "Reminders"
-  ${ensureRemindersListScript()}
+    await Promise.all(
+      (Object.keys(CONTAINERS) as Array<keyof typeof CONTAINERS>).map((app) =>
+        runAppleScript(`tell application "${app}"
+  ${ensureContainerScript(app)}
 end tell`),
-      runAppleScript(`tell application "Notes"
-  ${ensureNotesFolderScript()}
-end tell`),
-      runAppleScript(`tell application "Calendar"
-  ${ensureCalendarScript()}
-end tell`),
-    ]);
+      ),
+    );
   });
 
   test("calendar_list_calendars returns a JSON array", async () => {
@@ -317,11 +303,11 @@ end tell`),
       name,
     });
 
-    const afterDelete = await call(handlers, "reminders_search", {
-      query: name,
+    const afterDelete = await call(handlers, "reminders_list", {
+      listName: TEST_CONTAINER_NAME,
       includeCompleted: true,
     });
-    expect(JSON.parse(afterDelete)).not.toContain(name);
+    expect(afterDelete).not.toContain(name);
   }, 120_000);
 
   test("notes create / edit / move / delete round-trip with markdown conversion", async () => {
@@ -448,8 +434,8 @@ end tell`),
 
       const raw = await runAppleScript(`
 tell application "Calendar"
-  tell calendar "${esc(TEST_CONTAINER_NAME)}"
-    set createdEvent to first event whose summary is "${esc(title)}"
+  tell calendar ${quoted(TEST_CONTAINER_NAME)}
+    set createdEvent to first event whose summary is ${quoted(title)}
     return (allday event of createdEvent as text) & linefeed & (recurrence of createdEvent as text)
   end tell
 end tell`);

@@ -119,10 +119,10 @@ describe("calendarCreateEventScript", () => {
       minute: 0,
       durationMinutes: 30,
       allDay: false,
-      recurrence: {
+      recurrenceRule: calendarRecurrenceRule({
         frequency: "monthly",
         interval: 4,
-      },
+      }),
     });
 
     expect(script).toContain('recurrence:"FREQ=MONTHLY;INTERVAL=4"');
