@@ -408,6 +408,7 @@ end tell`),
       daysAhead: 3,
     });
     expect(found).toContain(timedTitle);
+    expect(found).toContain(" @ Integration Ave");
 
     await call(handlers, "calendar_create_event", {
       calendar: TEST_CONTAINER_NAME,
