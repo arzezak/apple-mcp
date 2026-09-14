@@ -49,7 +49,6 @@ resultList as text`,
   });
 
   test("round-trips with parseList: comma-space names survive", () => {
-    // Simulates the linefeed-joined text the script produces.
     const joined = "Shopping, urgent\nWork\nHome";
     expect(parseList(joined)).toEqual(["Shopping, urgent", "Work", "Home"]);
   });

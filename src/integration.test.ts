@@ -35,8 +35,6 @@ function cleanupScript(...names: string[]): string {
     .join("\n    ");
 }
 
-// Find-or-create fragments for the Test containers, shared by the identity
-// tests and the tool-handler suite. Each leaves the container in `box`.
 function ensureRemindersListScript(): string {
   return `try
     set box to list "${esc(TEST_CONTAINER_NAME)}"
@@ -59,9 +57,6 @@ function ensureCalendarScript(): string {
   set box to calendar "${esc(TEST_CONTAINER_NAME)}"`;
 }
 
-// Envelope shared by the identity tests: whatever was created in createdA and
-// createdB is deleted on both the success and error paths, so test data never
-// leaks into the real apps.
 function withCleanup(body: string, returnExpression: string): string {
   return `set createdA to missing value
   set createdB to missing value
@@ -91,8 +86,6 @@ async function call(
   const result = await handler(input);
   return result.content[0].text;
 }
-
-// ─── Identity tests ───────────────────────────────────────────────────────────
 
 describeIntegration("Apple app identity integration", () => {
   test("Reminders exposes IDs and can disambiguate duplicate titles by body", async () => {
@@ -200,16 +193,12 @@ end tell`, 110_000);
   }, 120_000);
 });
 
-// ─── Tool handler tests ───────────────────────────────────────────────────────
-
 describeIntegration("Tool handlers", () => {
   let handlers: Map<string, Handler>;
 
   beforeAll(async () => {
     handlers = buildHandlers();
 
-    // Ensure Test containers exist. The three apps are independent processes,
-    // so spin up all three setup scripts concurrently.
     await Promise.all([
       runAppleScript(`tell application "Reminders"
   ${ensureRemindersListScript()}
@@ -222,8 +211,6 @@ end tell`),
 end tell`),
     ]);
   });
-
-  // ── Read tools ──────────────────────────────────────────────────────────────
 
   test("calendar_list_calendars returns a JSON array", async () => {
     const text = await call(handlers, "calendar_list_calendars", {});
@@ -296,8 +283,6 @@ end tell`),
     expect(Array.isArray(JSON.parse(text))).toBe(true);
   }, 120_000);
 
-  // ── Reminders write round-trip ───────────────────────────────────────────────
-
   test("reminders create / complete / delete round-trip", async () => {
     const name = uniqueName("reminder");
 
@@ -338,8 +323,6 @@ end tell`),
     });
     expect(JSON.parse(afterDelete)).not.toContain(name);
   }, 120_000);
-
-  // ── Notes write round-trip ───────────────────────────────────────────────────
 
   test("notes create / edit / move / delete round-trip with markdown conversion", async () => {
     const title = uniqueName("note");
@@ -383,8 +366,6 @@ end tell`),
     });
     expect(JSON.parse(afterDelete)).not.toContain(renamed);
   });
-
-  // ── Calendar write round-trip ─────────────────────────────────────────────────
 
   test("calendar create (timed + all-day) / list+search / delete round-trip", async () => {
     const timedTitle = uniqueName("event");
@@ -445,8 +426,6 @@ end tell`),
     expect(afterDelete).not.toContain(timedTitle);
   });
 
-  // Creates an every-four-month recurring event, reads its allday flag and
-  // recurrence straight from Calendar, and always deletes the event.
   async function roundTripRecurringEvent(
     title: string,
     overrides: Record<string, unknown>,
@@ -484,7 +463,6 @@ end tell`);
           title,
         });
       } catch {
-        // Creation may have failed before there was anything to clean up.
       }
     }
   }

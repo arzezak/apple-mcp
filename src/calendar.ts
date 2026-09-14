@@ -71,11 +71,8 @@ export function calendarRecurrenceRule(recurrence: Recurrence): string {
   return parts.join(";");
 }
 
-// Fetches event records with one "properties of" Apple Event per calendar:
-// the (expensive) whose filter is evaluated once and the loop reads local
-// records, instead of paying one round trip per property per event.
-// Prefixes each line with the calendar name when searching all calendars and
-// appends " @ location" when the event has one.
+// "properties of" evaluates the expensive whose filter once per calendar;
+// per-property reads in the loop would pay one round trip per property per event.
 export function eventQueryScript(
   calendar: string | undefined,
   dateSetup: string,
@@ -106,10 +103,6 @@ end tell`;
 const DATE_RANGE_FILTER =
   "start date is greater than or equal to theStart and start date is less than or equal to theEnd";
 
-// Shared run shape for the two event query tools: scopes to one calendar or
-// all, restricts to the theStart..theEnd range set up by dateSetup, and needs
-// the longer timeout because all-calendars queries pay a few seconds per
-// calendar for the whose filter.
 function runEventQuery(
   calendar: string | undefined,
   dateSetup: string,

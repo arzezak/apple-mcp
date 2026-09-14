@@ -12,9 +12,8 @@ import {
 import { textResult, jsonResult } from "./results.ts";
 import { markdownToHtml, MARKDOWN_SYNTAX_DESCRIPTION } from "./markdown.ts";
 
-// Fetches names and dates as bulk lists (two Apple Events per folder) instead
-// of reading properties per note in the loop, which costs one round trip per
-// property per note.
+// Bulk lists cost two Apple Events per folder; per-note property reads cost
+// one round trip per property per note.
 function buildNotesListScript(folder?: string): string {
   return `
 tell application "Notes"

@@ -22,21 +22,15 @@ export function runAppleScript(
   });
 }
 
-// Whose-filter scans over large databases measured near or past the default
-// 30s timeout, so slow query call sites share this longer budget. An
-// all-calendars 7-day event query measured 43s warm on 2026-09-14 (ten
-// calendars); cold runs can exceed this, so scope to one calendar then.
+// Whose-filter scans measured past the default 30s: an all-calendars 7-day
+// event query took 43s warm across ten calendars (2026-09-14).
 export const SLOW_QUERY_TIMEOUT_MS = 60_000;
 
-// Runs a mutating script and turns it into the tool's confirmation result,
-// keeping the "run then confirm" shape in one place instead of every handler.
 export async function runAndConfirm(script: string, message: string) {
   await runAppleScript(script);
   return textResult(message);
 }
 
-// Read-side twin of runAndConfirm: runs a query script and renders its output,
-// substituting emptyMessage when the script returns nothing.
 export async function runAndReport(
   script: string,
   emptyMessage: string,
@@ -46,8 +40,6 @@ export async function runAndReport(
   return textResult(raw || emptyMessage);
 }
 
-// AppleScript expression selecting either one named entity or every entity of
-// that kind, e.g. scopeExpression("calendar", "Home") -> {calendar "Home"}.
 export function scopeExpression(kind: string, name?: string): string {
   return name ? `{${kind} ${quoted(name)}}` : `every ${kind}`;
 }
@@ -60,9 +52,8 @@ export function parseList(raw: string): string[] {
     .filter(Boolean);
 }
 
-// Script tail that renders a list variable joined by linefeed rather than
-// letting osascript render it with ", " (which is ambiguous: an item may itself
-// contain a comma-space). parseList splits the result back on linefeed.
+// osascript's default ", " list rendering is ambiguous when an item contains
+// a comma-space; parseList splits on linefeed.
 export function joinLinefeedScript(varName: string): string {
   return `set AppleScript's text item delimiters to linefeed
 ${varName} as text`;
@@ -73,8 +64,6 @@ export function nameListScript(application: string, listExpression: string): str
 ${joinLinefeedScript("resultList")}`;
 }
 
-// Runs nameListScript and decodes its output, keeping the linefeed-join protocol
-// (and its pairing with parseList) inside this module.
 export async function runNameList(
   application: string,
   listExpression: string,
@@ -153,14 +142,10 @@ export function appleScriptDateLiteral(input: string): string {
 const TIME_COMPONENT_RE =
   /(?:[ T]\d{1,2}:\d{2}(?::\d{2})?\b|\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b)/i;
 
-// Whether a date string carries a time of day, in either ISO or locale form.
-// Lives beside appleScriptDateLiteral so the two date grammars stay in sync.
 export function hasTimeComponent(input: string): boolean {
   return TIME_COMPONENT_RE.test(input);
 }
 
-// Renders a string as a quoted AppleScript literal so call sites cannot forget
-// to pair esc with the surrounding quotes.
 export function quoted(s: string): string {
   return `"${esc(s)}"`;
 }

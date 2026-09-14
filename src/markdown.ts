@@ -1,5 +1,3 @@
-// Lives here so the advertised capabilities stay next to the converter that
-// implements them.
 export const MARKDOWN_SYNTAX_DESCRIPTION =
   "Supports markdown: # headings, - bullets, 1. numbered, **bold**, *italic*, ```code blocks```, `inline code`. HTML also accepted.";
 

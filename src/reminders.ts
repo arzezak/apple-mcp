@@ -26,9 +26,6 @@ const PROPERTY_LIST_VARS = {
 
 type ReminderProperty = keyof typeof PROPERTY_LIST_VARS;
 
-// Loop body shared by the two list scripts below; read maps a reminder
-// property to the AppleScript expression that reads it for the current
-// iteration, so both fetch shapes render identical lines.
 function reminderLineStatements(
   read: (property: ReminderProperty) => string,
 ): string {
@@ -49,9 +46,8 @@ function reminderLineStatements(
     set end of outputLines to line_`;
 }
 
-// Fastest measured shape when filtering: "properties of" evaluates the
-// completed filter once and the loop reads local records, where separate
-// per-property fetches re-evaluate the filter four times.
+// Fastest measured shape when filtering: per-property fetches would
+// re-evaluate the completed filter four times.
 function incompleteRemindersScript(listName: string): string {
   return `tell application "Reminders"
   tell list ${quoted(listName)}
@@ -65,9 +61,8 @@ function incompleteRemindersScript(listName: string): string {
 end tell`;
 }
 
-// Fastest measured shape without a filter: per-property bulk fetches.
-// "properties of every reminder" is several times slower here because full
-// records for every completed reminder come back too.
+// Fastest measured shape without a filter: "properties of every reminder"
+// is several times slower because it returns full records for completed ones too.
 function allRemindersScript(listName: string): string {
   return `tell application "Reminders"
   tell list ${quoted(listName)}
@@ -232,8 +227,6 @@ export function registerRemindersTools(server: McpServer) {
     },
     async ({ query, includeCompleted }) => {
       const completedClause = includeCompleted ? "" : " and completed is false";
-      // Scans every reminder across all lists; measured near the default 30s
-      // timeout on large databases.
       return jsonResult(
         await runNameList(
           "Reminders",
