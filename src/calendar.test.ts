@@ -2,7 +2,20 @@ import { describe, expect, test } from "bun:test";
 import {
   calendarCreateEventScript,
   calendarRecurrenceRule,
+  eventQueryScript,
 } from "./calendar.ts";
+
+describe("eventQueryScript", () => {
+  test("appends the location only when the event has one", () => {
+    const script = eventQueryScript("Work", "", "whose summary is \"x\"");
+
+    expect(script).toContain("set loc to location of r");
+    expect(script).toContain(
+      'if loc is not missing value and loc is not "" then set eventLine to eventLine & " @ " & loc',
+    );
+    expect(script).toContain("set end of outputLines to eventLine");
+  });
+});
 
 describe("calendarCreateEventScript", () => {
   test("all-day events end on the same day", () => {

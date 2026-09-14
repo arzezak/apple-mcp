@@ -74,8 +74,9 @@ export function calendarRecurrenceRule(recurrence: Recurrence): string {
 // Fetches event records with one "properties of" Apple Event per calendar:
 // the (expensive) whose filter is evaluated once and the loop reads local
 // records, instead of paying one round trip per property per event.
-// Prefixes each line with the calendar name when searching all calendars.
-function eventQueryScript(
+// Prefixes each line with the calendar name when searching all calendars and
+// appends " @ location" when the event has one.
+export function eventQueryScript(
   calendar: string | undefined,
   dateSetup: string,
   eventFilter: string,
@@ -92,7 +93,10 @@ tell application "Calendar"
   repeat with cal in ${scopeExpression("calendar", calendar)}
     ${calNameSetup}set recordList to properties of (every event of cal ${eventFilter})
     repeat with r in recordList
-      set end of outputLines to (${linePrefix}summary of r & " | " & (start date of r as text) & " → " & (end date of r as text))
+      set eventLine to (${linePrefix}summary of r & " | " & (start date of r as text) & " → " & (end date of r as text))
+      set loc to location of r
+      if loc is not missing value and loc is not "" then set eventLine to eventLine & " @ " & loc
+      set end of outputLines to eventLine
     end repeat
   end repeat
   ${joinLinefeedScript("outputLines")}

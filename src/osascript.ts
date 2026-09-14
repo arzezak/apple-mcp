@@ -23,8 +23,10 @@ export function runAppleScript(
 }
 
 // Whose-filter scans over large databases measured near or past the default
-// 30s timeout, so slow query call sites share this longer budget.
-export const SLOW_QUERY_TIMEOUT_MS = 120_000;
+// 30s timeout, so slow query call sites share this longer budget. An
+// all-calendars 7-day event query measured 43s warm on 2026-09-14 (ten
+// calendars); cold runs can exceed this, so scope to one calendar then.
+export const SLOW_QUERY_TIMEOUT_MS = 60_000;
 
 // Runs a mutating script and turns it into the tool's confirmation result,
 // keeping the "run then confirm" shape in one place instead of every handler.
