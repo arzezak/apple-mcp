@@ -12,7 +12,9 @@ export function runAppleScript(
       { timeout: timeoutMs },
       (err, stdout, stderr) => {
         if (err) {
-          const msg = stderr?.trim() || err.message;
+          const msg = err.killed
+            ? `timed out after ${timeoutMs / 1000}s`
+            : stderr?.trim() || err.message;
           reject(new Error(`AppleScript error: ${msg}`));
           return;
         }
