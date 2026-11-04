@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   runAppleScript,
   runAndConfirm,
+  deleteFirstMatching,
   runAndReport,
   runNameList,
   quoted,
@@ -197,7 +198,9 @@ export function registerNotesTools(server: McpServer) {
       },
     },
     async ({ name }) => {
-      const script = `tell application "Notes" to delete (first note whose name is ${quoted(name)})`;
+      const script = `tell application "Notes"
+  ${deleteFirstMatching("note", `name is ${quoted(name)}`)}
+end tell`;
       return runAndConfirm(script, `Deleted note "${name}".`);
     },
   );

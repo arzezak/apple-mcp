@@ -61,6 +61,13 @@ export function matchClause({
     : { clause: `${nameProperty} is ${quoted(name!)}`, label: quoted(name!) };
 }
 
+// Checked with a count rather than by binding the match first: binding a
+// reference to a reminder created seconds earlier blocks ~6-13s (2026-11-04).
+export function deleteFirstMatching(kind: string, clause: string): string {
+  return `if (count of (every ${kind} whose ${clause})) is 0 then error "No matching ${kind}." number 1
+  delete (first ${kind} whose ${clause})`;
+}
+
 export function scopeExpression(kind: string, name?: string): string {
   return name ? `{${kind} ${quoted(name)}}` : `every ${kind}`;
 }

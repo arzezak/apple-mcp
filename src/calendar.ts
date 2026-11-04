@@ -6,6 +6,7 @@ import {
   runAppleScript,
   runNameList,
   matchClause,
+  deleteFirstMatching,
   quoted,
   appleScriptDateLiteral,
   joinLinefeedScript,
@@ -317,7 +318,9 @@ export function registerCalendarTools(server: McpServer) {
         id,
         idProperty: "uid",
       });
-      const script = `tell application "Calendar" to tell calendar ${quoted(calendar)} to delete (first event whose ${clause})`;
+      const script = `tell application "Calendar" to tell calendar ${quoted(calendar)}
+  ${deleteFirstMatching("event", clause)}
+end tell`;
       return runAndConfirm(script, `Deleted event ${label}.`);
     },
   );

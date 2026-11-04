@@ -6,6 +6,7 @@ import {
   runAppleScript,
   runNameList,
   matchClause,
+  deleteFirstMatching,
   quoted,
   appleScriptDateLiteral,
   hasTimeComponent,
@@ -221,7 +222,9 @@ export function registerRemindersTools(server: McpServer) {
     },
     async ({ listName, name, id }) => {
       const { clause, label } = matchClause({ nameProperty: "name", name, id });
-      const script = `tell application "Reminders" to delete (first reminder of list ${quoted(listName)} whose ${clause})`;
+      const script = `tell application "Reminders" to tell list ${quoted(listName)}
+  ${deleteFirstMatching("reminder", clause)}
+end tell`;
       return runAndConfirm(script, `Deleted reminder ${label}.`);
     },
   );

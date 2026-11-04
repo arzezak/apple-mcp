@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   appleScriptDateLiteral,
+  deleteFirstMatching,
   matchClause,
   nameListScript,
   parseList,
@@ -105,6 +106,15 @@ describe("matchClause", () => {
     expect(() => matchClause({ nameProperty: "name" })).toThrow("exactly one");
     expect(() => matchClause({ nameProperty: "name", name: "x", id: "y" })).toThrow(
       "exactly one",
+    );
+  });
+});
+
+describe("deleteFirstMatching", () => {
+  test("errors when nothing matches before deleting", () => {
+    expect(deleteFirstMatching("event", 'uid is "X"')).toBe(
+      `if (count of (every event whose uid is "X")) is 0 then error "No matching event." number 1
+  delete (first event whose uid is "X")`,
     );
   });
 });

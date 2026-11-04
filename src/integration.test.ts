@@ -275,6 +275,19 @@ end tell`),
     expect(Array.isArray(JSON.parse(text))).toBe(true);
   }, 120_000);
 
+  test("delete tools fail when nothing matches", async () => {
+    const missing = uniqueName("missing");
+    await expect(
+      call(handlers, "reminders_delete", { listName: TEST_CONTAINER_NAME, id: missing }),
+    ).rejects.toThrow("No matching reminder");
+    await expect(
+      call(handlers, "calendar_delete_event", { calendar: TEST_CONTAINER_NAME, id: missing }),
+    ).rejects.toThrow("No matching event");
+    await expect(
+      call(handlers, "notes_delete", { name: missing }),
+    ).rejects.toThrow("No matching note");
+  }, 15_000);
+
   test("reminders create / complete / delete round-trip", async () => {
     const name = uniqueName("reminder");
 
@@ -428,7 +441,7 @@ end tell`),
       daysAhead: 3,
     });
     expect(afterDelete).not.toContain(timedTitle);
-  });
+  }, 15_000);
 
   async function roundTripRecurringEvent(
     title: string,
