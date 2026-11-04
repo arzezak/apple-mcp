@@ -1,19 +1,20 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  runAndConfirm,
-  runAndReport,
   runAppleScript,
   runNameList,
   matchClause,
+  matchLabel,
   deleteFirstMatching,
+  parseList,
   quoted,
   appleScriptDateLiteral,
   hasTimeComponent,
   joinLinefeedScript,
   SLOW_QUERY_TIMEOUT_MS,
+  type RunScript,
 } from "./osascript.ts";
-import { jsonResult, textResult } from "./results.ts";
+import { jsonResult, linesResult, textResult } from "./results.ts";
 
 const PROPERTY_LIST_VARS = {
   name: "nameList",
@@ -79,7 +80,7 @@ function allRemindersScript(listName: string): string {
 end tell`;
 }
 
-export function reminderCreateScript({
+function reminderCreateScript({
   listName,
   name,
   notes,
@@ -91,7 +92,7 @@ export function reminderCreateScript({
   name: string;
   notes?: string;
   dueDate?: string;
-  allDay: boolean;
+  allDay?: boolean;
   priority?: number;
 }): string {
   const props: string[] = [`name:${quoted(name)}`];
@@ -108,10 +109,69 @@ export function reminderCreateScript({
 
 // Parsed from the make result because reading any property of a just-made
 // reminder in-script blocks ~13s (measured 2026-11-04).
-export function parseReminderId(raw: string): string {
+function parseReminderId(raw: string): string {
   const id = /x-apple-reminder:\/\/[^\s"]+/.exec(raw)?.[0];
   if (!id) throw new Error(`No reminder id in AppleScript result: ${raw}`);
   return id;
+}
+
+export type ReminderMatch = { listName: string; name?: string; id?: string };
+
+export type Reminders = {
+  listLists(): Promise<string[]>;
+  list(input: { listName: string; includeCompleted?: boolean }): Promise<string[]>;
+  create(input: {
+    listName: string;
+    name: string;
+    notes?: string;
+    dueDate?: string;
+    allDay?: boolean;
+    priority?: number;
+  }): Promise<{ id: string }>;
+  complete(match: ReminderMatch): Promise<void>;
+  delete(match: ReminderMatch): Promise<void>;
+  search(input: { query: string; includeCompleted?: boolean }): Promise<string[]>;
+};
+
+export function createReminders(run: RunScript = runAppleScript): Reminders {
+  return {
+    listLists: () => runNameList(run, "Reminders", "name of every list"),
+
+    async list({ listName, includeCompleted = false }) {
+      const script = includeCompleted
+        ? allRemindersScript(listName)
+        : incompleteRemindersScript(listName);
+      return parseList(await run(script));
+    },
+
+    async create(input) {
+      return { id: parseReminderId(await run(reminderCreateScript(input))) };
+    },
+
+    async complete({ listName, name, id }) {
+      const { clause } = matchClause({ nameProperty: "name", name, id });
+      await run(
+        `tell application "Reminders" to tell list ${quoted(listName)} to set completed of (first reminder whose ${clause}) to true`,
+      );
+    },
+
+    async delete({ listName, name, id }) {
+      const { clause } = matchClause({ nameProperty: "name", name, id });
+      await run(`tell application "Reminders" to tell list ${quoted(listName)}
+  ${deleteFirstMatching("reminder", clause)}
+end tell`);
+    },
+
+    search({ query, includeCompleted = false }) {
+      const completedClause = includeCompleted ? "" : " and completed is false";
+      return runNameList(
+        run,
+        "Reminders",
+        `name of (every reminder whose name contains ${quoted(query)}${completedClause})`,
+        SLOW_QUERY_TIMEOUT_MS,
+      );
+    },
+  };
 }
 
 const listNameField = z.string().describe("Name of the reminder list");
@@ -120,16 +180,17 @@ const reminderIdField = z
   .optional()
   .describe("Reminder id as returned by reminders_create; use instead of name");
 
-export function registerRemindersTools(server: McpServer) {
+export function registerRemindersTools(
+  server: McpServer,
+  reminders: Reminders = createReminders(),
+) {
   server.registerTool(
     "reminders_list_lists",
     {
       title: "List Reminder Lists",
       description: "Get all reminder list names from Apple Reminders",
     },
-    async () => {
-      return jsonResult(await runNameList("Reminders", "name of every list"));
-    },
+    async () => jsonResult(await reminders.listLists()),
   );
 
   server.registerTool(
@@ -146,12 +207,7 @@ export function registerRemindersTools(server: McpServer) {
           .describe("Include completed reminders"),
       },
     },
-    async ({ listName, includeCompleted }) => {
-      const script = includeCompleted
-        ? allRemindersScript(listName)
-        : incompleteRemindersScript(listName);
-      return runAndReport(script, "No reminders found.");
-    },
+    async (input) => linesResult(await reminders.list(input), "No reminders found."),
   );
 
   server.registerTool(
@@ -184,7 +240,7 @@ export function registerRemindersTools(server: McpServer) {
       },
     },
     async (input) => {
-      const id = parseReminderId(await runAppleScript(reminderCreateScript(input)));
+      const { id } = await reminders.create(input);
       return textResult(
         `Created reminder "${input.name}" in list "${input.listName}" (id: ${id}).`,
       );
@@ -202,10 +258,9 @@ export function registerRemindersTools(server: McpServer) {
         id: reminderIdField,
       },
     },
-    async ({ listName, name, id }) => {
-      const { clause, label } = matchClause({ nameProperty: "name", name, id });
-      const script = `tell application "Reminders" to tell list ${quoted(listName)} to set completed of (first reminder whose ${clause}) to true`;
-      return runAndConfirm(script, `Completed reminder ${label}.`);
+    async (input) => {
+      await reminders.complete(input);
+      return textResult(`Completed reminder ${matchLabel(input)}.`);
     },
   );
 
@@ -220,12 +275,9 @@ export function registerRemindersTools(server: McpServer) {
         id: reminderIdField,
       },
     },
-    async ({ listName, name, id }) => {
-      const { clause, label } = matchClause({ nameProperty: "name", name, id });
-      const script = `tell application "Reminders" to tell list ${quoted(listName)}
-  ${deleteFirstMatching("reminder", clause)}
-end tell`;
-      return runAndConfirm(script, `Deleted reminder ${label}.`);
+    async (input) => {
+      await reminders.delete(input);
+      return textResult(`Deleted reminder ${matchLabel(input)}.`);
     },
   );
 
@@ -243,15 +295,6 @@ end tell`;
           .describe("Include completed reminders in search"),
       },
     },
-    async ({ query, includeCompleted }) => {
-      const completedClause = includeCompleted ? "" : " and completed is false";
-      return jsonResult(
-        await runNameList(
-          "Reminders",
-          `name of (every reminder whose name contains ${quoted(query)}${completedClause})`,
-          SLOW_QUERY_TIMEOUT_MS,
-        ),
-      );
-    },
+    async (input) => jsonResult(await reminders.search(input)),
   );
 }

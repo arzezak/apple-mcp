@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { textResult } from "./results.ts";
+
+export type RunScript = (script: string, timeoutMs?: number) => Promise<string>;
 
 export function runAppleScript(
   script: string,
@@ -28,20 +29,6 @@ export function runAppleScript(
 // event query took 43s warm across ten calendars (2026-09-14).
 export const SLOW_QUERY_TIMEOUT_MS = 60_000;
 
-export async function runAndConfirm(script: string, message: string) {
-  await runAppleScript(script);
-  return textResult(message);
-}
-
-export async function runAndReport(
-  script: string,
-  emptyMessage: string,
-  timeoutMs?: number,
-) {
-  const raw = await runAppleScript(script, timeoutMs);
-  return textResult(raw || emptyMessage);
-}
-
 export function matchClause({
   nameProperty,
   name,
@@ -56,9 +43,17 @@ export function matchClause({
   if ((name === undefined) === (id === undefined)) {
     throw new Error("Provide exactly one of name or id.");
   }
-  return id !== undefined
-    ? { clause: `${idProperty} is ${quoted(id)}`, label: `with id ${id}` }
-    : { clause: `${nameProperty} is ${quoted(name!)}`, label: quoted(name!) };
+  return {
+    clause:
+      id !== undefined
+        ? `${idProperty} is ${quoted(id)}`
+        : `${nameProperty} is ${quoted(name!)}`,
+    label: matchLabel({ name, id }),
+  };
+}
+
+export function matchLabel({ name, id }: { name?: string; id?: string }): string {
+  return id !== undefined ? `with id ${id}` : quoted(name!);
 }
 
 // Checked with a count rather than by binding the match first: binding a
@@ -93,15 +88,13 @@ ${joinLinefeedScript("resultList")}`;
 }
 
 export async function runNameList(
+  run: RunScript,
   application: string,
   listExpression: string,
   timeoutMs?: number,
 ): Promise<string[]> {
   return parseList(
-    await runAppleScript(
-      nameListScript(application, listExpression),
-      timeoutMs,
-    ),
+    await run(nameListScript(application, listExpression), timeoutMs),
   );
 }
 

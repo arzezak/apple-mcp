@@ -1,19 +1,20 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  runAndConfirm,
-  runAndReport,
   runAppleScript,
   runNameList,
   matchClause,
+  matchLabel,
   deleteFirstMatching,
+  parseList,
   quoted,
   appleScriptDateLiteral,
   joinLinefeedScript,
   scopeExpression,
   SLOW_QUERY_TIMEOUT_MS,
+  type RunScript,
 } from "./osascript.ts";
-import { jsonResult, textResult } from "./results.ts";
+import { jsonResult, linesResult, textResult } from "./results.ts";
 
 const recurrenceSchema = z.object({
   frequency: z
@@ -56,7 +57,7 @@ function rruleDate(input: string): string {
   return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
-export function calendarRecurrenceRule(recurrence: Recurrence): string {
+function calendarRecurrenceRule(recurrence: Recurrence): string {
   if (!Number.isInteger(recurrence.interval) || recurrence.interval < 1) {
     throw new Error("Recurrence interval must be a positive integer.");
   }
@@ -85,7 +86,7 @@ export function calendarRecurrenceRule(recurrence: Recurrence): string {
 
 // "properties of" evaluates the expensive whose filter once per calendar;
 // per-property reads in the loop would pay one round trip per property per event.
-export function eventQueryScript(
+function eventQueryScript(
   calendar: string | undefined,
   dateSetup: string,
   eventFilter: string,
@@ -112,12 +113,12 @@ tell application "Calendar"
 end tell`;
 }
 
-function runEventQuery(
+function eventRangeScript(
   calendar: string | undefined,
   daysBack: number,
   daysAhead: number,
   extraFilter?: string,
-) {
+): string {
   const dateSetup = `set theStart to current date
 ${setTimeOfDay("theStart")}
 set theEnd to theStart + (${daysAhead} * days) - 1
@@ -125,38 +126,35 @@ set theStart to theStart - (${daysBack} * days)`;
   const filter =
     "start date is greater than or equal to theStart and start date is less than or equal to theEnd" +
     (extraFilter ? ` and ${extraFilter}` : "");
-  return runAndReport(
-    eventQueryScript(calendar, dateSetup, `whose ${filter}`),
-    "No events found.",
-    SLOW_QUERY_TIMEOUT_MS,
-  );
+  return eventQueryScript(calendar, dateSetup, `whose ${filter}`);
 }
 
-export function calendarCreateEventScript({
-  calendar,
-  title,
-  startDate,
-  daysFromNow,
-  hour,
-  minute,
-  durationMinutes,
-  location,
-  notes,
-  allDay,
-  recurrenceRule,
-}: {
+type CreateEventInput = {
   calendar: string;
   title: string;
   startDate?: string;
-  daysFromNow: number;
+  daysFromNow?: number;
   hour: number;
-  minute: number;
-  durationMinutes: number;
+  minute?: number;
+  durationMinutes?: number;
   location?: string;
   notes?: string;
-  allDay: boolean;
-  recurrenceRule?: string;
-}): string {
+  allDay?: boolean;
+};
+
+function calendarCreateEventScript({
+  calendar,
+  title,
+  startDate,
+  daysFromNow = 0,
+  hour,
+  minute = 0,
+  durationMinutes = 60,
+  location,
+  notes,
+  allDay = false,
+  recurrenceRule,
+}: CreateEventInput & { recurrenceRule?: string }): string {
   const props: string[] = [`summary:${quoted(title)}`];
   if (location) props.push(`location:${quoted(location)}`);
   if (notes) props.push(`description:${quoted(notes)}`);
@@ -184,21 +182,84 @@ tell application "Calendar"
 end tell`;
 }
 
+export type EventMatch = { calendar: string; title?: string; id?: string };
+
+export type Calendar = {
+  listCalendars(): Promise<string[]>;
+  listEvents(input: {
+    calendar?: string;
+    daysAhead?: number;
+    daysBack?: number;
+  }): Promise<string[]>;
+  searchEvents(input: {
+    query: string;
+    calendar?: string;
+    daysAhead?: number;
+  }): Promise<string[]>;
+  createEvent(
+    input: CreateEventInput & { recurrence?: Recurrence },
+  ): Promise<{ id: string; recurrenceRule?: string }>;
+  deleteEvent(match: EventMatch): Promise<void>;
+};
+
+export function createCalendar(run: RunScript = runAppleScript): Calendar {
+  return {
+    listCalendars: () => runNameList(run, "Calendar", "name of every calendar"),
+
+    async listEvents({ calendar, daysAhead = 1, daysBack = 0 }) {
+      return parseList(
+        await run(
+          eventRangeScript(calendar, daysBack, daysAhead),
+          SLOW_QUERY_TIMEOUT_MS,
+        ),
+      );
+    },
+
+    async searchEvents({ query, calendar, daysAhead = 30 }) {
+      return parseList(
+        await run(
+          eventRangeScript(calendar, 0, daysAhead, `summary contains ${quoted(query)}`),
+          SLOW_QUERY_TIMEOUT_MS,
+        ),
+      );
+    },
+
+    async createEvent({ recurrence, ...input }) {
+      const recurrenceRule = recurrence && calendarRecurrenceRule(recurrence);
+      const id = await run(calendarCreateEventScript({ ...input, recurrenceRule }));
+      return { id, recurrenceRule };
+    },
+
+    async deleteEvent({ calendar, title, id }) {
+      const { clause } = matchClause({
+        nameProperty: "summary",
+        name: title,
+        id,
+        idProperty: "uid",
+      });
+      await run(`tell application "Calendar" to tell calendar ${quoted(calendar)}
+  ${deleteFirstMatching("event", clause)}
+end tell`);
+    },
+  };
+}
+
 const calendarField = z
   .string()
   .optional()
   .describe("Calendar name. Omit to search all calendars.");
 
-export function registerCalendarTools(server: McpServer) {
+export function registerCalendarTools(
+  server: McpServer,
+  calendar: Calendar = createCalendar(),
+) {
   server.registerTool(
     "calendar_list_calendars",
     {
       title: "List Calendars",
       description: "Get all calendar names from Apple Calendar",
     },
-    async () => {
-      return jsonResult(await runNameList("Calendar", "name of every calendar"));
-    },
+    async () => jsonResult(await calendar.listCalendars()),
   );
 
   server.registerTool(
@@ -221,9 +282,7 @@ export function registerCalendarTools(server: McpServer) {
           .describe("Number of days to look back from today (default: 0)"),
       },
     },
-    async ({ calendar, daysAhead, daysBack }) => {
-      return runEventQuery(calendar, daysBack, daysAhead);
-    },
+    async (input) => linesResult(await calendar.listEvents(input), "No events found."),
   );
 
   server.registerTool(
@@ -263,13 +322,9 @@ export function registerCalendarTools(server: McpServer) {
           ),
       },
     },
-    async ({ recurrence, ...input }) => {
-      const recurrenceRule =
-        recurrence && calendarRecurrenceRule(recurrence);
+    async (input) => {
+      const { id, recurrenceRule } = await calendar.createEvent(input);
       const suffix = recurrenceRule ? ` with recurrence ${recurrenceRule}` : "";
-      const id = await runAppleScript(
-        calendarCreateEventScript({ ...input, recurrenceRule }),
-      );
       return textResult(
         `Created event "${input.title}" on calendar "${input.calendar}"${suffix} (id: ${id}).`,
       );
@@ -291,9 +346,7 @@ export function registerCalendarTools(server: McpServer) {
           .describe("How many days ahead to search (default: 30)"),
       },
     },
-    async ({ query, calendar, daysAhead }) => {
-      return runEventQuery(calendar, 0, daysAhead, `summary contains ${quoted(query)}`);
-    },
+    async (input) => linesResult(await calendar.searchEvents(input), "No events found."),
   );
 
   server.registerTool(
@@ -311,17 +364,11 @@ export function registerCalendarTools(server: McpServer) {
           .describe("Event id as returned by calendar_create_event; use instead of title"),
       },
     },
-    async ({ calendar, title, id }) => {
-      const { clause, label } = matchClause({
-        nameProperty: "summary",
-        name: title,
-        id,
-        idProperty: "uid",
-      });
-      const script = `tell application "Calendar" to tell calendar ${quoted(calendar)}
-  ${deleteFirstMatching("event", clause)}
-end tell`;
-      return runAndConfirm(script, `Deleted event ${label}.`);
+    async (input) => {
+      await calendar.deleteEvent(input);
+      return textResult(
+        `Deleted event ${matchLabel({ name: input.title, id: input.id })}.`,
+      );
     },
   );
 }
