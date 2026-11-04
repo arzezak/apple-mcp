@@ -66,6 +66,12 @@ function expectDifferentIds(first: string, second: string): void {
   expect(first).not.toBe(second);
 }
 
+function createdId(text: string, idPattern: RegExp): string {
+  const match = new RegExp(`\\(id: (${idPattern.source})\\)\\.$`).exec(text);
+  expect(match, text).not.toBeNull();
+  return match![1];
+}
+
 async function call(
   handlers: Map<string, Handler>,
   name: string,
@@ -272,13 +278,19 @@ end tell`),
   test("reminders create / complete / delete round-trip", async () => {
     const name = uniqueName("reminder");
 
-    await call(handlers, "reminders_create", {
+    const created = await call(handlers, "reminders_create", {
       listName: TEST_CONTAINER_NAME,
       name,
       notes: "integration notes",
       dueDate: "2026-12-31 09:00:00",
       priority: 5,
     });
+    const id = createdId(created, /x-apple-reminder:\/\/[0-9A-F-]{36}/);
+    expect(
+      await runAppleScript(
+        `tell application "Reminders" to tell list ${quoted(TEST_CONTAINER_NAME)} to name of (first reminder whose id is ${quoted(id)})`,
+      ),
+    ).toBe(name);
 
     const listed = await call(handlers, "reminders_list", {
       listName: TEST_CONTAINER_NAME,
@@ -308,7 +320,7 @@ end tell`),
       includeCompleted: true,
     });
     expect(afterDelete).not.toContain(name);
-  }, 120_000);
+  }, 15_000);
 
   test("notes create / edit / move / delete round-trip with markdown conversion", async () => {
     const title = uniqueName("note");
@@ -357,7 +369,7 @@ end tell`),
     const timedTitle = uniqueName("event");
     const allDayTitle = uniqueName("allday");
 
-    await call(handlers, "calendar_create_event", {
+    const created = await call(handlers, "calendar_create_event", {
       calendar: TEST_CONTAINER_NAME,
       title: timedTitle,
       daysFromNow: 1,
@@ -368,6 +380,12 @@ end tell`),
       notes: "integration test",
       allDay: false,
     });
+    const uid = createdId(created, /[0-9A-F-]{36}/);
+    expect(
+      await runAppleScript(
+        `tell application "Calendar" to tell calendar ${quoted(TEST_CONTAINER_NAME)} to summary of (first event whose uid is ${quoted(uid)})`,
+      ),
+    ).toBe(timedTitle);
 
     const found = await call(handlers, "calendar_search_events", {
       query: timedTitle,

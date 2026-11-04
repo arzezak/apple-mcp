@@ -106,8 +106,10 @@ export function reminderCreateScript({
 
 // Parsed from the make result because reading any property of a just-made
 // reminder in-script blocks ~13s (measured 2026-11-04).
-export function parseReminderId(raw: string): string | undefined {
-  return /x-apple-reminder:\/\/[^\s"]+/.exec(raw)?.[0];
+export function parseReminderId(raw: string): string {
+  const id = /x-apple-reminder:\/\/[^\s"]+/.exec(raw)?.[0];
+  if (!id) throw new Error(`No reminder id in AppleScript result: ${raw}`);
+  return id;
 }
 
 const listNameField = z.string().describe("Name of the reminder list");

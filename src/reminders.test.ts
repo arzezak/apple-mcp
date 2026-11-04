@@ -73,4 +73,8 @@ describe("parseReminderId", () => {
       ),
     ).toBe("x-apple-reminder://ABC");
   });
+
+  test("throws when the result carries no id", () => {
+    expect(() => parseReminderId("")).toThrow("No reminder id");
+  });
 });
