@@ -301,7 +301,7 @@ end tell`),
 
     await call(handlers, "reminders_complete", {
       listName: TEST_CONTAINER_NAME,
-      name,
+      id,
     });
 
     const withCompleted = await call(handlers, "reminders_list", {
@@ -415,7 +415,7 @@ end tell`),
 
     await call(handlers, "calendar_delete_event", {
       calendar: TEST_CONTAINER_NAME,
-      title: timedTitle,
+      id: uid,
     });
     await call(handlers, "calendar_delete_event", {
       calendar: TEST_CONTAINER_NAME,

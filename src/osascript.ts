@@ -42,6 +42,25 @@ export async function runAndReport(
   return textResult(raw || emptyMessage);
 }
 
+export function matchClause({
+  nameProperty,
+  name,
+  id,
+  idProperty = "id",
+}: {
+  nameProperty: string;
+  name?: string;
+  id?: string;
+  idProperty?: string;
+}): { clause: string; label: string } {
+  if ((name === undefined) === (id === undefined)) {
+    throw new Error("Provide exactly one of name or id.");
+  }
+  return id !== undefined
+    ? { clause: `${idProperty} is ${quoted(id)}`, label: `with id ${id}` }
+    : { clause: `${nameProperty} is ${quoted(name!)}`, label: quoted(name!) };
+}
+
 export function scopeExpression(kind: string, name?: string): string {
   return name ? `{${kind} ${quoted(name)}}` : `every ${kind}`;
 }

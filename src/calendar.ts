@@ -5,6 +5,7 @@ import {
   runAndReport,
   runAppleScript,
   runNameList,
+  matchClause,
   quoted,
   appleScriptDateLiteral,
   joinLinefeedScript,
@@ -299,15 +300,25 @@ export function registerCalendarTools(server: McpServer) {
     {
       title: "Delete Calendar Event",
       description:
-        "Delete an event by its exact title. Deletes the first match on the specified calendar.",
+        "Delete an event by its exact title or by id. Deletes the first match on the specified calendar.",
       inputSchema: {
         calendar: z.string().describe("Calendar name"),
-        title: z.string().describe("Exact title of the event to delete"),
+        title: z.string().optional().describe("Exact title of the event to delete"),
+        id: z
+          .string()
+          .optional()
+          .describe("Event id as returned by calendar_create_event; use instead of title"),
       },
     },
-    async ({ calendar, title }) => {
-      const script = `tell application "Calendar" to tell calendar ${quoted(calendar)} to delete (first event whose summary is ${quoted(title)})`;
-      return runAndConfirm(script, `Deleted event "${title}".`);
+    async ({ calendar, title, id }) => {
+      const { clause, label } = matchClause({
+        nameProperty: "summary",
+        name: title,
+        id,
+        idProperty: "uid",
+      });
+      const script = `tell application "Calendar" to tell calendar ${quoted(calendar)} to delete (first event whose ${clause})`;
+      return runAndConfirm(script, `Deleted event ${label}.`);
     },
   );
 }

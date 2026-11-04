@@ -12,6 +12,8 @@ Requires [Bun](https://bun.sh) and macOS.
 
 **Calendar:** `calendar_list_calendars`, `calendar_list_events`, `calendar_create_event`, `calendar_search_events`, `calendar_delete_event`
 
+`reminders_create` and `calendar_create_event` return the new item's id. `reminders_complete`, `reminders_delete` and `calendar_delete_event` accept that `id` in place of `name` or `title`.
+
 `calendar_create_event` accepts an optional `recurrence` object:
 
 ```json

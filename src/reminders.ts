@@ -5,6 +5,7 @@ import {
   runAndReport,
   runAppleScript,
   runNameList,
+  matchClause,
   quoted,
   appleScriptDateLiteral,
   hasTimeComponent,
@@ -113,6 +114,10 @@ export function parseReminderId(raw: string): string {
 }
 
 const listNameField = z.string().describe("Name of the reminder list");
+const reminderIdField = z
+  .string()
+  .optional()
+  .describe("Reminder id as returned by reminders_create; use instead of name");
 
 export function registerRemindersTools(server: McpServer) {
   server.registerTool(
@@ -192,12 +197,14 @@ export function registerRemindersTools(server: McpServer) {
       description: "Mark a reminder as completed",
       inputSchema: {
         listName: listNameField,
-        name: z.string().describe("Exact name of the reminder to complete"),
+        name: z.string().optional().describe("Exact name of the reminder to complete"),
+        id: reminderIdField,
       },
     },
-    async ({ listName, name }) => {
-      const script = `tell application "Reminders" to tell list ${quoted(listName)} to set completed of (first reminder whose name is ${quoted(name)}) to true`;
-      return runAndConfirm(script, `Completed reminder "${name}".`);
+    async ({ listName, name, id }) => {
+      const { clause, label } = matchClause({ nameProperty: "name", name, id });
+      const script = `tell application "Reminders" to tell list ${quoted(listName)} to set completed of (first reminder whose ${clause}) to true`;
+      return runAndConfirm(script, `Completed reminder ${label}.`);
     },
   );
 
@@ -208,12 +215,14 @@ export function registerRemindersTools(server: McpServer) {
       description: "Delete a reminder from a list",
       inputSchema: {
         listName: listNameField,
-        name: z.string().describe("Exact name of the reminder to delete"),
+        name: z.string().optional().describe("Exact name of the reminder to delete"),
+        id: reminderIdField,
       },
     },
-    async ({ listName, name }) => {
-      const script = `tell application "Reminders" to delete (first reminder of list ${quoted(listName)} whose name is ${quoted(name)})`;
-      return runAndConfirm(script, `Deleted reminder "${name}".`);
+    async ({ listName, name, id }) => {
+      const { clause, label } = matchClause({ nameProperty: "name", name, id });
+      const script = `tell application "Reminders" to delete (first reminder of list ${quoted(listName)} whose ${clause})`;
+      return runAndConfirm(script, `Deleted reminder ${label}.`);
     },
   );
 

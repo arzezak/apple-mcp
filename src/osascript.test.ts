@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   appleScriptDateLiteral,
+  matchClause,
   nameListScript,
   parseList,
 } from "./osascript.ts";
@@ -82,6 +83,28 @@ describe("appleScriptDateLiteral", () => {
   test("preserves non-ISO locale date strings", () => {
     expect(appleScriptDateLiteral("7 June 2026 10:00 AM")).toBe(
       'date "7 June 2026 10:00 AM"',
+    );
+  });
+});
+
+describe("matchClause", () => {
+  test("matches by name", () => {
+    expect(matchClause({ nameProperty: "summary", name: 'a "b"' })).toEqual({
+      clause: 'summary is "a \\"b\\""',
+      label: '"a \\"b\\""',
+    });
+  });
+
+  test("matches by id with a custom id property", () => {
+    expect(
+      matchClause({ nameProperty: "summary", id: "ABC", idProperty: "uid" }),
+    ).toEqual({ clause: 'uid is "ABC"', label: "with id ABC" });
+  });
+
+  test("rejects neither or both", () => {
+    expect(() => matchClause({ nameProperty: "name" })).toThrow("exactly one");
+    expect(() => matchClause({ nameProperty: "name", name: "x", id: "y" })).toThrow(
+      "exactly one",
     );
   });
 });
