@@ -31,9 +31,10 @@ describe("calendarCreateEventScript", () => {
 
     expect(script).toContain("set theEnd to theStart + days - 1");
     expect(script).toContain(
-      "make new event with properties {start date:theStart, end date:theEnd, summary:",
+      "set createdEvent to make new event with properties {start date:theStart, end date:theEnd, summary:",
     );
     expect(script).toContain("allday event:true");
+    expect(script).toContain("return uid of createdEvent");
   });
 
   test("all-day events ignore provided hour and minute values", () => {

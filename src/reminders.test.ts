@@ -54,4 +54,17 @@ describe("reminderCreateScript", () => {
     expect(script).toContain('name:"Pay \\\\ \\"Bill\\""');
     expect(script).toContain('body:"Use \\"checking\\""');
   });
+
+  test("returns the id of the created reminder", () => {
+    const script = reminderCreateScript({
+      listName: "Inbox",
+      name: "Test reminder",
+      allDay: false,
+    });
+
+    expect(script).toContain(
+      'set createdReminder to make new reminder with properties {name:"Test reminder"}',
+    );
+    expect(script).toContain("return id of createdReminder");
+  });
 });

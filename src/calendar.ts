@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   runAndConfirm,
   runAndReport,
+  runAppleScript,
   runNameList,
   quoted,
   appleScriptDateLiteral,
@@ -10,7 +11,7 @@ import {
   scopeExpression,
   SLOW_QUERY_TIMEOUT_MS,
 } from "./osascript.ts";
-import { jsonResult } from "./results.ts";
+import { jsonResult, textResult } from "./results.ts";
 
 const recurrenceSchema = z.object({
   frequency: z
@@ -175,7 +176,8 @@ ${startSetup}
 ${dateSetup}
 tell application "Calendar"
   tell calendar ${quoted(calendar)}
-    make new event with properties {start date:theStart, end date:theEnd, ${props.join(", ")}}
+    set createdEvent to make new event with properties {start date:theStart, end date:theEnd, ${props.join(", ")}}
+    return uid of createdEvent
   end tell
 end tell`;
 }
@@ -263,9 +265,11 @@ export function registerCalendarTools(server: McpServer) {
       const recurrenceRule =
         recurrence && calendarRecurrenceRule(recurrence);
       const suffix = recurrenceRule ? ` with recurrence ${recurrenceRule}` : "";
-      return runAndConfirm(
+      const id = await runAppleScript(
         calendarCreateEventScript({ ...input, recurrenceRule }),
-        `Created event "${input.title}" on calendar "${input.calendar}"${suffix}.`,
+      );
+      return textResult(
+        `Created event "${input.title}" on calendar "${input.calendar}"${suffix} (id: ${id}).`,
       );
     },
   );

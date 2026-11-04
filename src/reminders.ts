@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   runAndConfirm,
   runAndReport,
+  runAppleScript,
   runNameList,
   quoted,
   appleScriptDateLiteral,
@@ -10,7 +11,7 @@ import {
   joinLinefeedScript,
   SLOW_QUERY_TIMEOUT_MS,
 } from "./osascript.ts";
-import { jsonResult } from "./results.ts";
+import { jsonResult, textResult } from "./results.ts";
 
 const PROPERTY_LIST_VARS = {
   name: "nameList",
@@ -100,7 +101,12 @@ export function reminderCreateScript({
   }
   if (priority !== undefined) props.push(`priority:${priority}`);
 
-  return `tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${props.join(", ")}}`;
+  return `tell application "Reminders"
+  tell list ${quoted(listName)}
+    set createdReminder to make new reminder with properties {${props.join(", ")}}
+    return id of createdReminder
+  end tell
+end tell`;
 }
 
 const listNameField = z.string().describe("Name of the reminder list");
@@ -169,9 +175,9 @@ export function registerRemindersTools(server: McpServer) {
       },
     },
     async (input) => {
-      return runAndConfirm(
-        reminderCreateScript(input),
-        `Created reminder "${input.name}" in list "${input.listName}".`,
+      const id = await runAppleScript(reminderCreateScript(input));
+      return textResult(
+        `Created reminder "${input.name}" in list "${input.listName}" (id: ${id}).`,
       );
     },
   );
