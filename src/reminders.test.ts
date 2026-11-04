@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { reminderCreateScript } from "./reminders.ts";
+import { parseReminderId, reminderCreateScript } from "./reminders.ts";
 
 describe("reminderCreateScript", () => {
   test("uses all-day due dates for ISO date-only input", () => {
@@ -55,16 +55,22 @@ describe("reminderCreateScript", () => {
     expect(script).toContain('body:"Use \\"checking\\""');
   });
 
-  test("returns the id of the created reminder", () => {
-    const script = reminderCreateScript({
-      listName: "Inbox",
-      name: "Test reminder",
-      allDay: false,
-    });
+});
 
-    expect(script).toContain(
-      'set createdReminder to make new reminder with properties {name:"Test reminder"}',
-    );
-    expect(script).toContain("return id of createdReminder");
+describe("parseReminderId", () => {
+  test("extracts the id from the make result", () => {
+    expect(
+      parseReminderId(
+        "reminder id x-apple-reminder://80C37AE0-1557-46BA-8185-5123E469B9D8",
+      ),
+    ).toBe("x-apple-reminder://80C37AE0-1557-46BA-8185-5123E469B9D8");
+  });
+
+  test("extracts a quoted id with a trailing specifier", () => {
+    expect(
+      parseReminderId(
+        'reminder id "x-apple-reminder://ABC" of list id "L1" of application "Reminders"',
+      ),
+    ).toBe("x-apple-reminder://ABC");
   });
 });

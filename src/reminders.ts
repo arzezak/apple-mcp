@@ -101,12 +101,13 @@ export function reminderCreateScript({
   }
   if (priority !== undefined) props.push(`priority:${priority}`);
 
-  return `tell application "Reminders"
-  tell list ${quoted(listName)}
-    set createdReminder to make new reminder with properties {${props.join(", ")}}
-    return id of createdReminder
-  end tell
-end tell`;
+  return `tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${props.join(", ")}}`;
+}
+
+// Parsed from the make result because reading any property of a just-made
+// reminder in-script blocks ~13s (measured 2026-11-04).
+export function parseReminderId(raw: string): string | undefined {
+  return /x-apple-reminder:\/\/[^\s"]+/.exec(raw)?.[0];
 }
 
 const listNameField = z.string().describe("Name of the reminder list");
@@ -175,7 +176,7 @@ export function registerRemindersTools(server: McpServer) {
       },
     },
     async (input) => {
-      const id = await runAppleScript(reminderCreateScript(input));
+      const id = parseReminderId(await runAppleScript(reminderCreateScript(input)));
       return textResult(
         `Created reminder "${input.name}" in list "${input.listName}" (id: ${id}).`,
       );
