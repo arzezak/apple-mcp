@@ -90,6 +90,7 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
       if (title === undefined && body === undefined) {
         throw new Error("Nothing to update. Provide a title, body, or both.");
       }
+      if (title === "") throw new Error("Title cannot be empty.");
       const lines = [
         `tell application "Notes"`,
         `  set n to first note whose name is ${quoted(name)}`,

@@ -24,6 +24,14 @@ describe("notes", () => {
     expect(scripts).toEqual([]);
   });
 
+  test("edit rejects an empty title before running anything", async () => {
+    const { run, scripts } = recordingRun();
+    await expect(
+      createNotes(run).edit({ name: "Plan", title: "" }),
+    ).rejects.toThrow("Title cannot be empty");
+    expect(scripts).toEqual([]);
+  });
+
   test("edit sets only the provided fields", async () => {
     const { run, scripts } = recordingRun();
     await createNotes(run).edit({ name: "Plan", title: "New" });
