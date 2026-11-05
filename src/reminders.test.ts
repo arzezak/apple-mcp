@@ -85,6 +85,69 @@ describe("reminders.create", () => {
   });
 });
 
+describe("reminders.create with recurrence", () => {
+  test("attaches the rule through EventKit after the AppleScript make", async () => {
+    const { run, scripts, languages } = recordingRun(`reminder id ${ID}`);
+    const created = await createReminders(run).create({
+      listName: "Inbox",
+      name: "Rent",
+      recurrence: { frequency: "monthly", interval: 1 },
+    });
+
+    expect(created).toEqual({ id: ID, recurrenceRule: "FREQ=MONTHLY;INTERVAL=1" });
+    expect(languages).toEqual([undefined, "JavaScript"]);
+    expect(scripts[1]).toContain(
+      'calendarItemWithIdentifier("80C37AE0-1557-46BA-8185-5123E469B9D8")',
+    );
+    expect(scripts[1]).toContain("initRecurrenceWithFrequencyIntervalEnd(2, 1, $())");
+  });
+
+  test("ends by count or by until date", async () => {
+    const { run, scripts } = recordingRun(`reminder id ${ID}`);
+    const reminders = createReminders(run);
+    await reminders.create({
+      listName: "Inbox",
+      name: "x",
+      recurrence: { frequency: "weekly", interval: 2, count: 5 },
+    });
+    await reminders.create({
+      listName: "Inbox",
+      name: "x",
+      recurrence: { frequency: "daily", interval: 1, until: "2027-01-01T00:00:00Z" },
+    });
+
+    expect(scripts[1]).toContain("recurrenceEndWithOccurrenceCount(5)");
+    expect(scripts[3]).toContain("dateWithTimeIntervalSince1970(1798761600)");
+  });
+
+  test("reports the created id when the recurrence step fails", async () => {
+    let calls = 0;
+    const run = async () => {
+      if (calls++ === 0) return `reminder id ${ID}`;
+      throw new Error("AppleScript error: no access");
+    };
+    await expect(
+      createReminders(run).create({
+        listName: "Inbox",
+        name: "x",
+        recurrence: { frequency: "daily", interval: 1 },
+      }),
+    ).rejects.toThrow(`(id: ${ID}) but could not attach the recurrence: AppleScript error: no access`);
+  });
+
+  test("rejects invalid rules before creating anything", async () => {
+    const { run, scripts } = recordingRun();
+    await expect(
+      createReminders(run).create({
+        listName: "Inbox",
+        name: "x",
+        recurrence: { frequency: "daily", interval: 1, count: 2, until: "2027-01-01" },
+      }),
+    ).rejects.toThrow("count or until, not both");
+    expect(scripts).toEqual([]);
+  });
+});
+
 describe("reminders.list", () => {
   test("filters completed reminders in-script by default", async () => {
     const { run, scripts } = recordingRun("- a\n- b");

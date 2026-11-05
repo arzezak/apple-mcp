@@ -15,73 +15,12 @@ import {
   type RunScript,
 } from "./osascript.ts";
 import { jsonResult, linesResult, textResult } from "./results.ts";
-
-const recurrenceSchema = z.object({
-  frequency: z
-    .enum(["daily", "weekly", "monthly", "yearly"])
-    .describe("Repeat frequency: daily, weekly, monthly, or yearly"),
-  interval: z
-    .number()
-    .int()
-    .positive()
-    .describe(
-      "Repeat every N frequency units, e.g. 4 with monthly means every 4 months",
-    ),
-  count: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe("Optional end after this many occurrences"),
-  until: z
-    .string()
-    .optional()
-    .describe(
-      "Optional ISO end date/time. Omit both count and until to repeat indefinitely.",
-    ),
-});
-
-type Recurrence = z.infer<typeof recurrenceSchema>;
+import { recurrenceSchema, recurrenceRule, type Recurrence } from "./recurrence.ts";
 
 function setTimeOfDay(varName: string, hour = 0, minute = 0): string {
   return `set hours of ${varName} to ${hour}
 set minutes of ${varName} to ${minute}
 set seconds of ${varName} to 0`;
-}
-
-function rruleDate(input: string): string {
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error(`Invalid recurrence until date: ${input}`);
-  }
-  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-}
-
-function calendarRecurrenceRule(recurrence: Recurrence): string {
-  if (!Number.isInteger(recurrence.interval) || recurrence.interval < 1) {
-    throw new Error("Recurrence interval must be a positive integer.");
-  }
-  if (
-    recurrence.count !== undefined &&
-    (!Number.isInteger(recurrence.count) || recurrence.count < 1)
-  ) {
-    throw new Error("Recurrence count must be a positive integer.");
-  }
-  if (recurrence.count !== undefined && recurrence.until !== undefined) {
-    throw new Error("Recurrence can end with count or until, not both.");
-  }
-
-  const parts = [
-    `FREQ=${recurrence.frequency.toUpperCase()}`,
-    `INTERVAL=${recurrence.interval}`,
-  ];
-  if (recurrence.count !== undefined) {
-    parts.push(`COUNT=${recurrence.count}`);
-  }
-  if (recurrence.until !== undefined) {
-    parts.push(`UNTIL=${rruleDate(recurrence.until)}`);
-  }
-  return parts.join(";");
 }
 
 // "properties of" evaluates the expensive whose filter once per calendar;
@@ -317,9 +256,9 @@ export function createCalendar(run: RunScript = runAppleScript): Calendar {
     },
 
     async createEvent({ recurrence, ...input }) {
-      const recurrenceRule = recurrence && calendarRecurrenceRule(recurrence);
-      const id = await run(calendarCreateEventScript({ ...input, recurrenceRule }));
-      return { id, recurrenceRule };
+      const rule = recurrence && recurrenceRule(recurrence);
+      const id = await run(calendarCreateEventScript({ ...input, recurrenceRule: rule }));
+      return { id, recurrenceRule: rule };
     },
 
     async updateEvent({ calendar, title, id, ...changes }) {

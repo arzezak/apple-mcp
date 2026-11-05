@@ -16,7 +16,7 @@ Requires [Bun](https://bun.sh) and macOS.
 
 `reminders_update` and `calendar_update_event` change an item in place; only the fields given are touched. For an event, `startDate` alone moves the day and keeps the time and duration, `hour`/`minute`/`durationMinutes` change the time, and `allDay` switches between all-day and timed. `reminders_search` prefixes each line with its list name; with `includeCompleted` it returns names only, because fetching full records for completed reminders across all lists exceeds the 60s query timeout.
 
-`calendar_create_event` accepts an optional `recurrence` object:
+`calendar_create_event` and `reminders_create` accept an optional `recurrence` object:
 
 ```json
 {
@@ -28,6 +28,8 @@ Requires [Bun](https://bun.sh) and macOS.
 ```
 
 Omit both `count` and `until` to repeat indefinitely. For example, `{"frequency":"monthly","interval":4}` creates an event that repeats every 4 months with no end date.
+
+Reminders have no recurrence in their AppleScript dictionary, so `reminders_create` attaches the rule through EventKit (JavaScript for Automation). The first use may prompt to allow `osascript` access to Reminders under System Settings > Privacy & Security.
 
 It also accepts optional `startDate` for a specific ISO date. When `startDate` is omitted, the existing `daysFromNow` behavior is used.
 

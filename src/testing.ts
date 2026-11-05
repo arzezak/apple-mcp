@@ -1,10 +1,16 @@
-import type { RunScript } from "./osascript.ts";
+import type { RunScript, ScriptLanguage } from "./osascript.ts";
 
-export function recordingRun(output = ""): { run: RunScript; scripts: string[] } {
+export function recordingRun(output = ""): {
+  run: RunScript;
+  scripts: string[];
+  languages: (ScriptLanguage | undefined)[];
+} {
   const scripts: string[] = [];
-  const run: RunScript = async (script) => {
+  const languages: (ScriptLanguage | undefined)[] = [];
+  const run: RunScript = async (script, _timeoutMs, language) => {
     scripts.push(script);
+    languages.push(language);
     return output;
   };
-  return { run, scripts };
+  return { run, scripts, languages };
 }

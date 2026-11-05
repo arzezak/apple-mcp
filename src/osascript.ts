@@ -1,15 +1,22 @@
 import { execFile } from "node:child_process";
 
-export type RunScript = (script: string, timeoutMs?: number) => Promise<string>;
+export type ScriptLanguage = "AppleScript" | "JavaScript";
+
+export type RunScript = (
+  script: string,
+  timeoutMs?: number,
+  language?: ScriptLanguage,
+) => Promise<string>;
 
 export function runAppleScript(
   script: string,
   timeoutMs = 30_000,
+  language: ScriptLanguage = "AppleScript",
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "osascript",
-      ["-e", script],
+      ["-l", language, "-e", script],
       { timeout: timeoutMs },
       (err, stdout, stderr) => {
         if (err) {

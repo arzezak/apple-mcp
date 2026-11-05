@@ -17,6 +17,12 @@ import {
   type RunScript,
 } from "./osascript.ts";
 import { jsonResult, linesResult, textResult } from "./results.ts";
+import {
+  recurrenceSchema,
+  recurrenceRule,
+  recurrenceUntilDate,
+  type Recurrence,
+} from "./recurrence.ts";
 
 const PROPERTY_LIST_VARS = {
   name: "nameList",
@@ -159,6 +165,38 @@ function reminderUpdateScript(
 end tell`;
 }
 
+const EK_FREQUENCY = { daily: 0, weekly: 1, monthly: 2, yearly: 3 } as const;
+
+// Reminders' AppleScript dictionary has no recurrence, so the rule is attached
+// through EventKit (JXA). The UUID in the AppleScript id is the EventKit
+// calendarItemIdentifier (checked 2026-11-05). The bridge returns the
+// authorization status as a string, hence Number().
+function reminderRecurrenceScript(id: string, recurrence: Recurrence): string {
+  const uuid = id.replace(/^x-apple-reminder:\/\//, "");
+  const end =
+    recurrence.count !== undefined
+      ? `$.EKRecurrenceEnd.recurrenceEndWithOccurrenceCount(${recurrence.count})`
+      : recurrence.until !== undefined
+        ? `$.EKRecurrenceEnd.recurrenceEndWithEndDate($.NSDate.dateWithTimeIntervalSince1970(${recurrenceUntilDate(recurrence.until).getTime() / 1000}))`
+        : "$()";
+  return `ObjC.import("EventKit");
+const store = $.EKEventStore.alloc.init;
+const status = () => Number($.EKEventStore.authorizationStatusForEntityType(1));
+if (status() === 0) {
+  store.requestFullAccessToRemindersWithCompletion(() => {});
+  const deadline = Date.now() + 60000;
+  while (status() === 0 && Date.now() < deadline)
+    $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
+}
+if (status() !== 3)
+  throw new Error("osascript has no Reminders access. Allow it under System Settings > Privacy & Security > Reminders.");
+const item = store.calendarItemWithIdentifier(${JSON.stringify(uuid)});
+if (item.isNil()) throw new Error(${JSON.stringify(`No reminder with id ${id}.`)});
+item.addRecurrenceRule($.EKRecurrenceRule.alloc.initRecurrenceWithFrequencyIntervalEnd(${EK_FREQUENCY[recurrence.frequency]}, ${recurrence.interval}, ${end}));
+const error = Ref();
+if (!store.saveReminderCommitError(item, true, error)) throw new Error(ObjC.unwrap(error[0].localizedDescription));`;
+}
+
 // Parsed from the make result because reading any property of a just-made
 // reminder in-script blocks ~13s (measured 2026-11-04).
 function parseReminderId(raw: string): string {
@@ -187,7 +225,8 @@ export type Reminders = {
     dueDate?: string;
     allDay?: boolean;
     priority?: number;
-  }): Promise<{ id: string }>;
+    recurrence?: Recurrence;
+  }): Promise<{ id: string; recurrenceRule?: string }>;
   update(input: ReminderMatch & ReminderChanges): Promise<void>;
   complete(match: ReminderMatch): Promise<void>;
   delete(match: ReminderMatch): Promise<void>;
@@ -205,8 +244,19 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
       return parseList(await run(script));
     },
 
-    async create(input) {
-      return { id: parseReminderId(await run(reminderCreateScript(input))) };
+    async create({ recurrence, ...input }) {
+      const rule = recurrence && recurrenceRule(recurrence);
+      const id = parseReminderId(await run(reminderCreateScript(input)));
+      if (recurrence) {
+        try {
+          await run(reminderRecurrenceScript(id, recurrence), undefined, "JavaScript");
+        } catch (error) {
+          throw new Error(
+            `Created reminder "${input.name}" (id: ${id}) but could not attach the recurrence: ${(error as Error).message}`,
+          );
+        }
+      }
+      return { id, recurrenceRule: rule };
     },
 
     async update({ listName, name, id, ...changes }) {
@@ -312,12 +362,18 @@ export function registerRemindersTools(
             "Create with an all-day due date. Date-only dueDate values are treated as all-day even when this is false.",
           ),
         priority: priorityField,
+        recurrence: recurrenceSchema
+          .optional()
+          .describe(
+            'Optional recurrence rule, same shape as calendar_create_event. Example: {"frequency":"monthly","interval":1} repeats every month.',
+          ),
       },
     },
     async (input) => {
-      const { id } = await reminders.create(input);
+      const { id, recurrenceRule } = await reminders.create(input);
+      const suffix = recurrenceRule ? ` with recurrence ${recurrenceRule}` : "";
       return textResult(
-        `Created reminder "${input.name}" in list "${input.listName}" (id: ${id}).`,
+        `Created reminder "${input.name}" in list "${input.listName}"${suffix} (id: ${id}).`,
       );
     },
   );
