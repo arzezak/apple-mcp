@@ -121,7 +121,7 @@ describe("calendar.createEvent", () => {
       minute: 15,
     });
 
-    expect(script).toContain('set theStart to date "1 October 2026 at 12:00:00 AM"');
+    expect(script).toContain('set theStart to date "1 October 2026 12:00:00 AM"');
     expect(script).not.toContain("set theStart to current date");
     expect(script).not.toContain("99 * days");
     expect(script).toContain("set hours of theStart to 9");

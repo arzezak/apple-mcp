@@ -14,7 +14,7 @@ describe("reminders.create", () => {
     });
 
     expect(scripts[0]).toContain(
-      'allday due date:date "20 June 2026 at 12:00:00 AM"',
+      'allday due date:date "20 June 2026 12:00:00 AM"',
     );
     expect(scripts[0]).not.toContain(", due date:");
   });
@@ -27,7 +27,7 @@ describe("reminders.create", () => {
       dueDate: "2026-06-20 09:30:00",
     });
 
-    expect(scripts[0]).toContain('due date:date "20 June 2026 at 9:30:00 AM"');
+    expect(scripts[0]).toContain('due date:date "20 June 2026 9:30:00 AM"');
     expect(scripts[0]).not.toContain("allday due date:");
   });
 

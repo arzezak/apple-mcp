@@ -129,7 +129,8 @@ export function appleScriptDateLiteral(input: string): string {
 
   const h = Number(hour);
   const time = `${h % 12 || 12}:${minute}:${second} ${h >= 12 ? "PM" : "AM"}`;
-  return `date "${Number(day)} ${MONTH_NAMES[Number(month) - 1]} ${year} at ${time}"`;
+  // No "at" between date and time: on macOS 27 that form parses to midnight.
+  return `date "${Number(day)} ${MONTH_NAMES[Number(month) - 1]} ${year} ${time}"`;
 }
 
 const TIME_COMPONENT_RE =

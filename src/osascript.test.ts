@@ -59,19 +59,19 @@ resultList as text`,
 describe("appleScriptDateLiteral", () => {
   test("normalizes ISO date-time strings to unambiguous AppleScript dates", () => {
     expect(appleScriptDateLiteral("2026-06-07 10:00:00")).toBe(
-      'date "7 June 2026 at 10:00:00 AM"',
+      'date "7 June 2026 10:00:00 AM"',
     );
   });
 
   test("normalizes ISO date-only strings to midnight", () => {
     expect(appleScriptDateLiteral("2026-06-07")).toBe(
-      'date "7 June 2026 at 12:00:00 AM"',
+      'date "7 June 2026 12:00:00 AM"',
     );
   });
 
   test("supports ISO strings with T separators and omitted seconds", () => {
     expect(appleScriptDateLiteral("2026-06-07T22:05")).toBe(
-      'date "7 June 2026 at 10:05:00 PM"',
+      'date "7 June 2026 10:05:00 PM"',
     );
   });
 
