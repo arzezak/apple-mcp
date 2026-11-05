@@ -267,12 +267,15 @@ end tell`),
     expect(text.length).toBeGreaterThan(0);
   });
 
-  test("reminders_search returns a JSON array", async () => {
+  test("reminders_search returns lines with list names and ids", async () => {
     const text = await call(handlers, "reminders_search", {
       query: "a",
       includeCompleted: false,
     });
-    expect(Array.isArray(JSON.parse(text))).toBe(true);
+    expect(typeof text).toBe("string");
+    if (text !== "No reminders found.") {
+      expect(text.split("\n")[0]).toMatch(/^.+: .+ \| id: x-apple-reminder:\/\//);
+    }
   }, 120_000);
 
   test("delete tools fail when nothing matches", async () => {

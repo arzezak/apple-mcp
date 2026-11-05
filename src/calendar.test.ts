@@ -19,6 +19,7 @@ describe("calendar.listEvents and searchEvents", () => {
     expect(scripts[0]).toContain(
       'if loc is not missing value and loc is not "" then set eventLine to eventLine & " @ " & loc',
     );
+    expect(scripts[0]).toContain('set eventLine to eventLine & " | id: " & uid of r');
     expect(scripts[0]).toContain("set end of outputLines to eventLine");
   });
 

@@ -106,6 +106,7 @@ tell application "Calendar"
       set eventLine to (${linePrefix}summary of r & " | " & (start date of r as text) & " → " & (end date of r as text))
       set loc to location of r
       if loc is not missing value and loc is not "" then set eventLine to eventLine & " @ " & loc
+      set eventLine to eventLine & " | id: " & uid of r
       set end of outputLines to eventLine
     end repeat
   end repeat
@@ -267,7 +268,7 @@ export function registerCalendarTools(
     {
       title: "List Calendar Events",
       description:
-        "List events for a date range. Defaults to today. Can scope to a specific calendar or search all.",
+        "List events for a date range. Defaults to today. Can scope to a specific calendar or search all. Each line ends with the event id.",
       inputSchema: {
         calendar: calendarField,
         daysAhead: z
@@ -361,7 +362,7 @@ export function registerCalendarTools(
         id: z
           .string()
           .optional()
-          .describe("Event id as returned by calendar_create_event; use instead of title"),
+          .describe("Event id as returned by calendar_create_event or the listing tools; use instead of title"),
       },
     },
     async (input) => {

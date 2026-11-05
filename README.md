@@ -12,7 +12,7 @@ Requires [Bun](https://bun.sh) and macOS.
 
 **Calendar:** `calendar_list_calendars`, `calendar_list_events`, `calendar_create_event`, `calendar_search_events`, `calendar_delete_event`
 
-`reminders_create` and `calendar_create_event` return the new item's id. `reminders_complete`, `reminders_delete` and `calendar_delete_event` accept that `id` in place of `name` or `title`.
+`reminders_create` and `calendar_create_event` return the new item's id, and `reminders_list`, `reminders_search`, `calendar_list_events` and `calendar_search_events` end each line with it. `reminders_complete`, `reminders_delete` and `calendar_delete_event` accept that `id` in place of `name` or `title`. `reminders_search` prefixes each line with its list name; with `includeCompleted` it returns names only, because fetching full records for completed reminders across all lists exceeds the 60s query timeout.
 
 `calendar_create_event` accepts an optional `recurrence` object:
 

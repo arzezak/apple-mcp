@@ -11,6 +11,7 @@ import {
   appleScriptDateLiteral,
   hasTimeComponent,
   joinLinefeedScript,
+  scopeExpression,
   SLOW_QUERY_TIMEOUT_MS,
   type RunScript,
 } from "./osascript.ts";
@@ -22,14 +23,16 @@ const PROPERTY_LIST_VARS = {
   "allday due date": "allDayDueDateList",
   priority: "priorityList",
   body: "bodyList",
+  id: "idList",
 } as const;
 
 type ReminderProperty = keyof typeof PROPERTY_LIST_VARS;
 
 function reminderLineStatements(
   read: (property: ReminderProperty) => string,
+  prefix = '"- "',
 ): string {
-  return `set line_ to "- " & ${read("name")}
+  return `set line_ to ${prefix} & ${read("name")}
     try
       set d to ${read("due date")}
       if d is missing value then set d to ${read("allday due date")}
@@ -41,21 +44,39 @@ function reminderLineStatements(
     end try
     try
       set b to ${read("body")}
-      if b is not missing value and b is not "" then set line_ to line_ & " | notes: " & b
+      if b is not missing value and b is not "" then
+        set AppleScript's text item delimiters to {return & linefeed, return, linefeed}
+        set b to text items of b
+        set AppleScript's text item delimiters to " / "
+        set line_ to line_ & " | notes: " & (b as text)
+      end if
     end try
+    set line_ to line_ & " | id: " & ${read("id")}
     set end of outputLines to line_`;
 }
 
 // Fastest measured shape when filtering: per-property fetches would
-// re-evaluate the completed filter four times.
-function incompleteRemindersScript(listName: string): string {
+// re-evaluate the completed filter once per property. Scoped to one list for
+// reminders_list; across every list for reminders_search, where each line
+// carries the list name that reminders_complete and reminders_delete need
+// (~2x an app-wide name-only query: 32s vs 16s warm on 10 lists, 2026-11-04).
+function incompleteRemindersScript({
+  listName,
+  query,
+}: {
+  listName?: string;
+  query?: string;
+}): string {
+  const filter =
+    "completed is false" + (query ? ` and name contains ${quoted(query)}` : "");
+  const prefix = listName ? '"- "' : '(name of l) & ": "';
   return `tell application "Reminders"
-  tell list ${quoted(listName)}
-    set recordList to properties of (every reminder whose completed is false)
-  end tell
   set outputLines to {}
-  repeat with r in recordList
-    ${reminderLineStatements((property) => `${property} of r`)}
+  repeat with l in ${scopeExpression("list", listName)}
+    set recordList to properties of (every reminder of l whose ${filter})
+    repeat with r in recordList
+      ${reminderLineStatements((property) => `${property} of r`, prefix)}
+    end repeat
   end repeat
   ${joinLinefeedScript("outputLines")}
 end tell`;
@@ -71,6 +92,7 @@ function allRemindersScript(listName: string): string {
     set dueDateList to due date of every reminder
     set allDayDueDateList to allday due date of every reminder
     set priorityList to priority of every reminder
+    set idList to id of every reminder
   end tell
   set outputLines to {}
   repeat with i from 1 to count of nameList
@@ -140,7 +162,7 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
     async list({ listName, includeCompleted = false }) {
       const script = includeCompleted
         ? allRemindersScript(listName)
-        : incompleteRemindersScript(listName);
+        : incompleteRemindersScript({ listName });
       return parseList(await run(script));
     },
 
@@ -162,13 +184,19 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
 end tell`);
     },
 
-    search({ query, includeCompleted = false }) {
-      const completedClause = includeCompleted ? "" : " and completed is false";
-      return runNameList(
-        run,
-        "Reminders",
-        `name of (every reminder whose name contains ${quoted(query)}${completedClause})`,
-        SLOW_QUERY_TIMEOUT_MS,
+    // Full records for completed reminders across every list took 136s
+    // (2026-11-04), so that mode returns names only.
+    async search({ query, includeCompleted = false }) {
+      if (includeCompleted) {
+        return runNameList(
+          run,
+          "Reminders",
+          `name of (every reminder whose name contains ${quoted(query)})`,
+          SLOW_QUERY_TIMEOUT_MS,
+        );
+      }
+      return parseList(
+        await run(incompleteRemindersScript({ query }), SLOW_QUERY_TIMEOUT_MS),
       );
     },
   };
@@ -178,7 +206,7 @@ const listNameField = z.string().describe("Name of the reminder list");
 const reminderIdField = z
   .string()
   .optional()
-  .describe("Reminder id as returned by reminders_create; use instead of name");
+  .describe("Reminder id as returned by reminders_create, reminders_list or reminders_search; use instead of name");
 
 export function registerRemindersTools(
   server: McpServer,
@@ -198,7 +226,7 @@ export function registerRemindersTools(
     {
       title: "List Reminders",
       description:
-        "List reminders in a specific list. Returns name, due date, priority, and notes for each.",
+        "List reminders in a specific list. Returns name, due date, priority, notes, and id for each.",
       inputSchema: {
         listName: listNameField,
         includeCompleted: z
@@ -286,7 +314,7 @@ export function registerRemindersTools(
     {
       title: "Search Reminders",
       description:
-        "Search for reminders by name across all lists. Returns only incomplete reminders by default.",
+        "Search for reminders by name across all lists. Returns only incomplete reminders by default, one line each with list name, due date, priority, notes, and id. With includeCompleted, returns names only.",
       inputSchema: {
         query: z.string().describe("Search term to match in reminder names"),
         includeCompleted: z
@@ -295,6 +323,6 @@ export function registerRemindersTools(
           .describe("Include completed reminders in search"),
       },
     },
-    async (input) => jsonResult(await reminders.search(input)),
+    async (input) => linesResult(await reminders.search(input), "No reminders found."),
   );
 }

@@ -91,7 +91,20 @@ describe("reminders.list", () => {
     const lines = await createReminders(run).list({ listName: "Inbox" });
 
     expect(lines).toEqual(["- a", "- b"]);
+    expect(scripts[0]).toContain('repeat with l in {list "Inbox"}');
     expect(scripts[0]).toContain("whose completed is false");
+    expect(scripts[0]).toContain('" | id: " & id of r');
+  });
+
+  test("joins multi-line notes with a separator so each reminder stays on one line", async () => {
+    const { run, scripts } = recordingRun();
+    await createReminders(run).list({ listName: "Inbox" });
+
+    expect(scripts[0]).toContain(
+      "set AppleScript's text item delimiters to {return & linefeed, return, linefeed}",
+    );
+    expect(scripts[0]).toContain('set AppleScript\'s text item delimiters to " / "');
+    expect(scripts[0]).toContain('" | notes: " & (b as text)');
   });
 
   test("reads every reminder when completed ones are included", async () => {
@@ -103,7 +116,36 @@ describe("reminders.list", () => {
 
     expect(lines).toEqual([]);
     expect(scripts[0]).toContain("name of every reminder");
+    expect(scripts[0]).toContain("set idList to id of every reminder");
+    expect(scripts[0]).toContain('" | id: " & item i of idList');
     expect(scripts[0]).not.toContain("whose completed");
+  });
+});
+
+describe("reminders.search", () => {
+  test("walks every list and prefixes lines with the list name", async () => {
+    const { run, scripts } = recordingRun("Inbox: a | id: x");
+    const lines = await createReminders(run).search({ query: 'Pay "bill"' });
+
+    expect(lines).toEqual(["Inbox: a | id: x"]);
+    expect(scripts[0]).toContain("repeat with l in every list");
+    expect(scripts[0]).toContain(
+      'properties of (every reminder of l whose completed is false and name contains "Pay \\"bill\\"")',
+    );
+    expect(scripts[0]).toContain('set line_ to (name of l) & ": " & name of r');
+    expect(scripts[0]).toContain('" | id: " & id of r');
+  });
+
+  test("returns names only when completed reminders are included", async () => {
+    const { run, scripts } = recordingRun("a\nb");
+    const lines = await createReminders(run).search({
+      query: "a",
+      includeCompleted: true,
+    });
+
+    expect(lines).toEqual(["a", "b"]);
+    expect(scripts[0]).toContain('name of (every reminder whose name contains "a")');
+    expect(scripts[0]).not.toContain("completed is false");
   });
 });
 
