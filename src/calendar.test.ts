@@ -43,6 +43,72 @@ describe("calendar.listEvents and searchEvents", () => {
   });
 });
 
+describe("calendar.updateEvent", () => {
+  async function updateScript(
+    input: Parameters<ReturnType<typeof createCalendar>["updateEvent"]>[0],
+  ) {
+    const { run, scripts } = recordingRun();
+    await createCalendar(run).updateEvent(input);
+    return scripts[0]!;
+  }
+
+  test("addresses the event by id directly and by title through a filter", async () => {
+    expect(await updateScript({ calendar: "Home", id: "UID-1", newTitle: "x" })).toContain(
+      'tell event id "UID-1"',
+    );
+    expect(await updateScript({ calendar: "Home", title: "Old", newTitle: "x" })).toContain(
+      'tell first event whose summary is "Old"',
+    );
+  });
+
+  test("checks existence and sets only the given text fields", async () => {
+    const script = await updateScript({ calendar: "Home", id: "UID-1", location: "Room 3" });
+    expect(script).toContain('if not (exists event id "UID-1") then error "No matching event."');
+    expect(script).toContain('set location to "Room 3"');
+    expect(script).not.toContain("set summary");
+    expect(script).not.toContain("set start date");
+  });
+
+  test("startDate alone keeps the time of day and the duration", async () => {
+    const script = await updateScript({ calendar: "Home", id: "UID-1", startDate: "2026-12-20" });
+    expect(script).toContain('set theStart to date "20 December 2026 12:00:00 AM"');
+    expect(script).toContain("set theStart to theStart + (time of oldStart)");
+    expect(script).toContain("set theEnd to theStart + (oldEnd - oldStart)");
+    expect(script).toContain("if theStart < oldEnd then");
+    expect(script).not.toContain("allday event");
+  });
+
+  test("hour and duration apply to a copy of the current start", async () => {
+    const script = await updateScript({
+      calendar: "Home",
+      id: "UID-1",
+      hour: 16,
+      durationMinutes: 45,
+    });
+    expect(script).toContain("copy oldStart to theStart");
+    expect(script).toContain("set hours of theStart to 16");
+    expect(script).toContain("set theEnd to theStart + (45 * minutes)");
+  });
+
+  test("allDay spans the whole day and toggles the flag", async () => {
+    const script = await updateScript({ calendar: "Home", id: "UID-1", allDay: true });
+    expect(script).toContain("set theEnd to theStart + days - 1");
+    expect(script).toContain("set allday event to true");
+  });
+
+  test("rejects an empty update and ambiguous matches before running anything", async () => {
+    const { run, scripts } = recordingRun();
+    const calendar = createCalendar(run);
+    await expect(calendar.updateEvent({ calendar: "Home", id: "UID-1" })).rejects.toThrow(
+      "Nothing to update",
+    );
+    await expect(
+      calendar.updateEvent({ calendar: "Home", newTitle: "x" }),
+    ).rejects.toThrow("exactly one");
+    expect(scripts).toEqual([]);
+  });
+});
+
 describe("calendar.createEvent", () => {
   test("returns the uid from the script", async () => {
     const { created } = await createScript({ calendar: "Home", title: "x", hour: 9 });

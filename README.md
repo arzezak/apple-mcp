@@ -4,15 +4,17 @@ MCP server for Apple Reminders, Notes, and Calendar via AppleScript.
 
 Requires [Bun](https://bun.sh) and macOS.
 
-## Tools (19 total)
+## Tools (21 total)
 
-**Reminders:** `reminders_list_lists`, `reminders_list`, `reminders_create`, `reminders_complete`, `reminders_delete`, `reminders_search`
+**Reminders:** `reminders_list_lists`, `reminders_list`, `reminders_create`, `reminders_update`, `reminders_complete`, `reminders_delete`, `reminders_search`
 
 **Notes:** `notes_list_folders`, `notes_list`, `notes_read`, `notes_create`, `notes_edit`, `notes_search`, `notes_move`, `notes_delete`
 
-**Calendar:** `calendar_list_calendars`, `calendar_list_events`, `calendar_create_event`, `calendar_search_events`, `calendar_delete_event`
+**Calendar:** `calendar_list_calendars`, `calendar_list_events`, `calendar_create_event`, `calendar_update_event`, `calendar_search_events`, `calendar_delete_event`
 
-`reminders_create` and `calendar_create_event` return the new item's id, and `reminders_list`, `reminders_search`, `calendar_list_events` and `calendar_search_events` end each line with it. `reminders_complete`, `reminders_delete` and `calendar_delete_event` accept that `id` in place of `name` or `title`. `reminders_search` prefixes each line with its list name; with `includeCompleted` it returns names only, because fetching full records for completed reminders across all lists exceeds the 60s query timeout.
+`reminders_create` and `calendar_create_event` return the new item's id, and `reminders_list`, `reminders_search`, `calendar_list_events` and `calendar_search_events` end each line with it. `reminders_update`, `reminders_complete`, `reminders_delete`, `calendar_update_event` and `calendar_delete_event` accept that `id` in place of `name` or `title`.
+
+`reminders_update` and `calendar_update_event` change an item in place; only the fields given are touched. For an event, `startDate` alone moves the day and keeps the time and duration, `hour`/`minute`/`durationMinutes` change the time, and `allDay` switches between all-day and timed. `reminders_search` prefixes each line with its list name; with `includeCompleted` it returns names only, because fetching full records for completed reminders across all lists exceeds the 60s query timeout.
 
 `calendar_create_event` accepts an optional `recurrence` object:
 

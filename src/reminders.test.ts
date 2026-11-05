@@ -149,6 +149,39 @@ describe("reminders.search", () => {
   });
 });
 
+describe("reminders.update", () => {
+  test("sets only the given fields on the matched reminder", async () => {
+    const { run, scripts } = recordingRun();
+    await createReminders(run).update({
+      listName: "Inbox",
+      id: "x-apple-reminder://ABC",
+      title: "New",
+      dueDate: "2026-12-11 14:00",
+    });
+
+    expect(scripts[0]).toContain('tell (first reminder whose id is "x-apple-reminder://ABC")');
+    expect(scripts[0]).toContain('error "No matching reminder."');
+    expect(scripts[0]).toContain('set name to "New"');
+    expect(scripts[0]).toContain('set due date to date "11 December 2026 2:00:00 PM"');
+    expect(scripts[0]).not.toContain("set body");
+    expect(scripts[0]).not.toContain("set priority");
+  });
+
+  test("date-only due dates become all-day", async () => {
+    const { run, scripts } = recordingRun();
+    await createReminders(run).update({ listName: "Inbox", name: "a", dueDate: "2026-12-12" });
+    expect(scripts[0]).toContain('set allday due date to date "12 December 2026 12:00:00 AM"');
+  });
+
+  test("rejects an empty update before running anything", async () => {
+    const { run, scripts } = recordingRun();
+    await expect(
+      createReminders(run).update({ listName: "Inbox", name: "a" }),
+    ).rejects.toThrow("Nothing to update");
+    expect(scripts).toEqual([]);
+  });
+});
+
 describe("reminders.complete and delete", () => {
   test("match by id when given", async () => {
     const { run, scripts } = recordingRun();

@@ -58,8 +58,12 @@ export function matchLabel({ name, id }: { name?: string; id?: string }): string
 
 // Checked with a count rather than by binding the match first: binding a
 // reference to a reminder created seconds earlier blocks ~6-13s (2026-11-04).
+export function requireMatching(kind: string, clause: string): string {
+  return `if (count of (every ${kind} whose ${clause})) is 0 then error "No matching ${kind}." number 1`;
+}
+
 export function deleteFirstMatching(kind: string, clause: string): string {
-  return `if (count of (every ${kind} whose ${clause})) is 0 then error "No matching ${kind}." number 1
+  return `${requireMatching(kind, clause)}
   delete (first ${kind} whose ${clause})`;
 }
 

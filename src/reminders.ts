@@ -6,6 +6,7 @@ import {
   matchClause,
   matchLabel,
   deleteFirstMatching,
+  requireMatching,
   parseList,
   quoted,
   appleScriptDateLiteral,
@@ -120,13 +121,42 @@ function reminderCreateScript({
   const props: string[] = [`name:${quoted(name)}`];
   if (notes) props.push(`body:${quoted(notes)}`);
   if (dueDate) {
-    const dueDateProperty =
-      allDay || !hasTimeComponent(dueDate) ? "allday due date" : "due date";
-    props.push(`${dueDateProperty}:${appleScriptDateLiteral(dueDate)}`);
+    const [property, value] = dueDateAssignment(dueDate, allDay);
+    props.push(`${property}:${value}`);
   }
   if (priority !== undefined) props.push(`priority:${priority}`);
 
   return `tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${props.join(", ")}}`;
+}
+
+function dueDateAssignment(dueDate: string, allDay?: boolean): [string, string] {
+  const property =
+    allDay || !hasTimeComponent(dueDate) ? "allday due date" : "due date";
+  return [property, appleScriptDateLiteral(dueDate)];
+}
+
+function reminderUpdateScript(
+  listName: string,
+  clause: string,
+  { title, notes, dueDate, allDay, priority }: ReminderChanges,
+): string {
+  const sets: string[] = [];
+  if (title !== undefined) sets.push(`set name to ${quoted(title)}`);
+  if (notes !== undefined) sets.push(`set body to ${quoted(notes)}`);
+  if (dueDate !== undefined) {
+    const [property, value] = dueDateAssignment(dueDate, allDay);
+    sets.push(`set ${property} to ${value}`);
+  }
+  if (priority !== undefined) sets.push(`set priority to ${priority}`);
+  if (sets.length === 0) {
+    throw new Error("Nothing to update. Provide a title, notes, dueDate or priority.");
+  }
+  return `tell application "Reminders" to tell list ${quoted(listName)}
+  ${requireMatching("reminder", clause)}
+  tell (first reminder whose ${clause})
+    ${sets.join("\n    ")}
+  end tell
+end tell`;
 }
 
 // Parsed from the make result because reading any property of a just-made
@@ -139,6 +169,14 @@ function parseReminderId(raw: string): string {
 
 export type ReminderMatch = { listName: string; name?: string; id?: string };
 
+export type ReminderChanges = {
+  title?: string;
+  notes?: string;
+  dueDate?: string;
+  allDay?: boolean;
+  priority?: number;
+};
+
 export type Reminders = {
   listLists(): Promise<string[]>;
   list(input: { listName: string; includeCompleted?: boolean }): Promise<string[]>;
@@ -150,6 +188,7 @@ export type Reminders = {
     allDay?: boolean;
     priority?: number;
   }): Promise<{ id: string }>;
+  update(input: ReminderMatch & ReminderChanges): Promise<void>;
   complete(match: ReminderMatch): Promise<void>;
   delete(match: ReminderMatch): Promise<void>;
   search(input: { query: string; includeCompleted?: boolean }): Promise<string[]>;
@@ -168,6 +207,11 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
 
     async create(input) {
       return { id: parseReminderId(await run(reminderCreateScript(input))) };
+    },
+
+    async update({ listName, name, id, ...changes }) {
+      const { clause } = matchClause({ nameProperty: "name", name, id });
+      await run(reminderUpdateScript(listName, clause, changes));
     },
 
     async complete({ listName, name, id }) {
@@ -208,6 +252,19 @@ const reminderIdField = z
   .optional()
   .describe("Reminder id as returned by reminders_create, reminders_list or reminders_search; use instead of name");
 
+const dueDateField = z
+  .string()
+  .optional()
+  .describe(
+    'Due date string in locale format, e.g. "2026-06-10 09:00:00" or "June 10, 2026 9:00 AM"',
+  );
+const priorityField = z
+  .number()
+  .min(0)
+  .max(9)
+  .optional()
+  .describe("Priority: 0=none, 1-4=high, 5=medium, 6-9=low");
+
 export function registerRemindersTools(
   server: McpServer,
   reminders: Reminders = createReminders(),
@@ -247,24 +304,14 @@ export function registerRemindersTools(
         listName: listNameField,
         name: z.string().describe("Reminder title"),
         notes: z.string().optional().describe("Notes/body for the reminder"),
-        dueDate: z
-          .string()
-          .optional()
-          .describe(
-            'Due date string in locale format, e.g. "2026-06-10 09:00:00" or "June 10, 2026 9:00 AM"',
-          ),
+        dueDate: dueDateField,
         allDay: z
           .boolean()
           .default(false)
           .describe(
             "Create with an all-day due date. Date-only dueDate values are treated as all-day even when this is false.",
           ),
-        priority: z
-          .number()
-          .min(0)
-          .max(9)
-          .optional()
-          .describe("Priority: 0=none, 1-4=high, 5=medium, 6-9=low"),
+        priority: priorityField,
       },
     },
     async (input) => {
@@ -272,6 +319,32 @@ export function registerRemindersTools(
       return textResult(
         `Created reminder "${input.name}" in list "${input.listName}" (id: ${id}).`,
       );
+    },
+  );
+
+  server.registerTool(
+    "reminders_update",
+    {
+      title: "Update Reminder",
+      description:
+        "Change a reminder's title, notes, due date or priority in place. Finds it by exact name or by id.",
+      inputSchema: {
+        listName: listNameField,
+        name: z.string().optional().describe("Exact current name of the reminder"),
+        id: reminderIdField,
+        title: z.string().optional().describe("New title"),
+        notes: z.string().optional().describe("New notes/body"),
+        dueDate: dueDateField,
+        allDay: z
+          .boolean()
+          .optional()
+          .describe("With dueDate: make it an all-day due date"),
+        priority: priorityField,
+      },
+    },
+    async (input) => {
+      await reminders.update(input);
+      return textResult(`Updated reminder ${matchLabel(input)}.`);
     },
   );
 

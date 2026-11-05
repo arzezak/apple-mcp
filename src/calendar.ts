@@ -185,6 +185,96 @@ end tell`;
 
 export type EventMatch = { calendar: string; title?: string; id?: string };
 
+export type EventChanges = {
+  newTitle?: string;
+  startDate?: string;
+  hour?: number;
+  minute?: number;
+  durationMinutes?: number;
+  location?: string;
+  notes?: string;
+  allDay?: boolean;
+};
+
+// `event id` resolves in ~0.3s where `first event whose uid is` scans the
+// whole calendar (~29s measured 2026-11-05).
+function eventSpecifier({ title, id }: { title?: string; id?: string }): string {
+  if ((title === undefined) === (id === undefined)) {
+    throw new Error("Provide exactly one of title or id.");
+  }
+  return id !== undefined
+    ? `event id ${quoted(id)}`
+    : `first event whose summary is ${quoted(title!)}`;
+}
+
+// Every `set` saves at once and Calendar rejects a start on or after the end,
+// so the order of the two date sets depends on the direction of the move.
+// `copy`, not `set`: AppleScript dates are shared by reference, so setting
+// hours on an alias of oldStart would also move oldStart.
+function eventRescheduleStatements({
+  startDate,
+  hour,
+  minute = 0,
+  durationMinutes,
+  allDay,
+}: EventChanges): string {
+  const lines = [
+    "set oldStart to get start date",
+    "set oldEnd to get end date",
+    startDate
+      ? `set theStart to ${appleScriptDateLiteral(startDate)}`
+      : "copy oldStart to theStart",
+  ];
+  if (allDay === true) lines.push(setTimeOfDay("theStart"));
+  else if (hour !== undefined) lines.push(setTimeOfDay("theStart", hour, minute));
+  else if (startDate) lines.push("set theStart to theStart + (time of oldStart)");
+
+  if (allDay === true) lines.push("set theEnd to theStart + days - 1");
+  else if (durationMinutes !== undefined)
+    lines.push(`set theEnd to theStart + (${durationMinutes} * minutes)`);
+  else lines.push("set theEnd to theStart + (oldEnd - oldStart)");
+
+  if (allDay !== undefined) lines.push(`set allday event to ${allDay}`);
+  lines.push(`if theStart < oldEnd then
+      set start date to theStart
+      set end date to theEnd
+    else
+      set end date to theEnd
+      set start date to theStart
+    end if`);
+  return lines.join("\n    ");
+}
+
+function calendarUpdateEventScript(
+  calendar: string,
+  specifier: string,
+  changes: EventChanges,
+): string {
+  const { newTitle, location, notes } = changes;
+  const sets: string[] = [];
+  if (newTitle !== undefined) sets.push(`set summary to ${quoted(newTitle)}`);
+  if (location !== undefined) sets.push(`set location to ${quoted(location)}`);
+  if (notes !== undefined) sets.push(`set description to ${quoted(notes)}`);
+  const reschedules =
+    changes.startDate !== undefined ||
+    changes.hour !== undefined ||
+    changes.minute !== undefined ||
+    changes.durationMinutes !== undefined ||
+    changes.allDay !== undefined;
+  if (reschedules) sets.push(eventRescheduleStatements(changes));
+  if (sets.length === 0) {
+    throw new Error(
+      "Nothing to update. Provide newTitle, location, notes, or a new date/time.",
+    );
+  }
+  return `tell application "Calendar" to tell calendar ${quoted(calendar)}
+  if not (exists ${specifier}) then error "No matching event." number 1
+  tell ${specifier}
+    ${sets.join("\n    ")}
+  end tell
+end tell`;
+}
+
 export type Calendar = {
   listCalendars(): Promise<string[]>;
   listEvents(input: {
@@ -200,6 +290,7 @@ export type Calendar = {
   createEvent(
     input: CreateEventInput & { recurrence?: Recurrence },
   ): Promise<{ id: string; recurrenceRule?: string }>;
+  updateEvent(input: EventMatch & EventChanges): Promise<void>;
   deleteEvent(match: EventMatch): Promise<void>;
 };
 
@@ -231,6 +322,13 @@ export function createCalendar(run: RunScript = runAppleScript): Calendar {
       return { id, recurrenceRule };
     },
 
+    async updateEvent({ calendar, title, id, ...changes }) {
+      await run(
+        calendarUpdateEventScript(calendar, eventSpecifier({ title, id }), changes),
+        SLOW_QUERY_TIMEOUT_MS,
+      );
+    },
+
     async deleteEvent({ calendar, title, id }) {
       const { clause } = matchClause({
         nameProperty: "summary",
@@ -249,6 +347,13 @@ const calendarField = z
   .string()
   .optional()
   .describe("Calendar name. Omit to search all calendars.");
+
+const eventIdField = z
+  .string()
+  .optional()
+  .describe(
+    "Event id as returned by calendar_create_event or the listing tools; use instead of title",
+  );
 
 export function registerCalendarTools(
   server: McpServer,
@@ -351,6 +456,34 @@ export function registerCalendarTools(
   );
 
   server.registerTool(
+    "calendar_update_event",
+    {
+      title: "Update Calendar Event",
+      description:
+        "Change an event in place: title, location, notes, date, time, duration or all-day. Finds it by exact title or by id. startDate alone moves the day and keeps the time and duration.",
+      inputSchema: {
+        calendar: z.string().describe("Calendar name"),
+        title: z.string().optional().describe("Exact current title of the event"),
+        id: eventIdField,
+        newTitle: z.string().optional().describe("New title"),
+        startDate: z.string().optional().describe("New ISO date, e.g. 2026-12-03"),
+        hour: z.number().min(0).max(23).optional().describe("New start hour (24h)"),
+        minute: z.number().min(0).max(59).optional().describe("New start minute"),
+        durationMinutes: z.number().optional().describe("New duration in minutes"),
+        location: z.string().optional().describe("New location"),
+        notes: z.string().optional().describe("New notes/description"),
+        allDay: z.boolean().optional().describe("Make the event all-day (true) or timed (false)"),
+      },
+    },
+    async (input) => {
+      await calendar.updateEvent(input);
+      return textResult(
+        `Updated event ${matchLabel({ name: input.title, id: input.id })}.`,
+      );
+    },
+  );
+
+  server.registerTool(
     "calendar_delete_event",
     {
       title: "Delete Calendar Event",
@@ -359,10 +492,7 @@ export function registerCalendarTools(
       inputSchema: {
         calendar: z.string().describe("Calendar name"),
         title: z.string().optional().describe("Exact title of the event to delete"),
-        id: z
-          .string()
-          .optional()
-          .describe("Event id as returned by calendar_create_event or the listing tools; use instead of title"),
+        id: eventIdField,
       },
     },
     async (input) => {
