@@ -109,6 +109,23 @@ describe("calendar.updateEvent", () => {
   });
 });
 
+describe("calendar.deleteEvent", () => {
+  test("deletes through the direct event id specifier", async () => {
+    const { run, scripts } = recordingRun();
+    await createCalendar(run).deleteEvent({ calendar: "Home", id: "UID-1" });
+
+    expect(scripts[0]).toContain('if not (exists event id "UID-1") then error "No matching event."');
+    expect(scripts[0]).toContain('delete event id "UID-1"');
+    expect(scripts[0]).not.toContain("whose uid");
+  });
+
+  test("deletes the first event with an exact title", async () => {
+    const { run, scripts } = recordingRun();
+    await createCalendar(run).deleteEvent({ calendar: "Home", title: "Standup" });
+    expect(scripts[0]).toContain('delete first event whose summary is "Standup"');
+  });
+});
+
 describe("calendar.createEvent", () => {
   test("returns the uid from the script", async () => {
     const { created } = await createScript({ calendar: "Home", title: "x", hour: 9 });

@@ -3,9 +3,7 @@ import { z } from "zod";
 import {
   runAppleScript,
   runNameList,
-  matchClause,
   matchLabel,
-  deleteFirstMatching,
   parseList,
   quoted,
   appleScriptDateLiteral,
@@ -184,6 +182,10 @@ function eventRescheduleStatements({
   return lines.join("\n    ");
 }
 
+function requireEvent(specifier: string): string {
+  return `if not (exists ${specifier}) then error "No matching event." number 1`;
+}
+
 function calendarUpdateEventScript(
   calendar: string,
   specifier: string,
@@ -207,7 +209,7 @@ function calendarUpdateEventScript(
     );
   }
   return `tell application "Calendar" to tell calendar ${quoted(calendar)}
-  if not (exists ${specifier}) then error "No matching event." number 1
+  ${requireEvent(specifier)}
   tell ${specifier}
     ${sets.join("\n    ")}
   end tell
@@ -269,14 +271,10 @@ export function createCalendar(run: RunScript = runAppleScript): Calendar {
     },
 
     async deleteEvent({ calendar, title, id }) {
-      const { clause } = matchClause({
-        nameProperty: "summary",
-        name: title,
-        id,
-        idProperty: "uid",
-      });
+      const specifier = eventSpecifier({ title, id });
       await run(`tell application "Calendar" to tell calendar ${quoted(calendar)}
-  ${deleteFirstMatching("event", clause)}
+  ${requireEvent(specifier)}
+  delete ${specifier}
 end tell`);
     },
   };
