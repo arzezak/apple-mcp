@@ -72,6 +72,71 @@ function createdId(text: string, idPattern: RegExp): string {
   return match![1];
 }
 
+function dateStamp(variable: string): string {
+  return `((year of ${variable}) as text) & "-" & ((month of ${variable} as integer) as text) & "-" & ((day of ${variable}) as text) & " " & ((time of ${variable}) as text)`;
+}
+
+async function readReminder(id: string) {
+  const raw = await runAppleScript(
+    `tell application "Reminders" to tell list ${quoted(TEST_CONTAINER_NAME)}
+  set r to first reminder whose id is ${quoted(id)}
+  set d to due date of r
+  return (name of r) & linefeed & (body of r) & linefeed & ((priority of r) as text) & linefeed & ${dateStamp("d")}
+end tell`,
+    60_000,
+  );
+  const [name, notes, priority, due] = raw.split("\n");
+  return { name, notes, priority, due, timed: await reminderHasDueTime(id) };
+}
+
+// AppleScript's `allday due date` is set on timed reminders too, so only
+// EventKit's due date components can tell the two apart.
+async function reminderHasDueTime(id: string): Promise<boolean> {
+  const uuid = id.replace("x-apple-reminder://", "");
+  const raw = await runAppleScript(
+    `ObjC.import("EventKit");
+const store = $.EKEventStore.alloc.init;
+String(Number(store.calendarItemWithIdentifier(${JSON.stringify(uuid)}).dueDateComponents.hour) < 24);`,
+    60_000,
+    "JavaScript",
+  );
+  return raw === "true";
+}
+
+async function readReminderRule(id: string) {
+  const uuid = id.replace("x-apple-reminder://", "");
+  const raw = await runAppleScript(
+    `ObjC.import("EventKit");
+const store = $.EKEventStore.alloc.init;
+const rule = store.calendarItemWithIdentifier(${JSON.stringify(uuid)}).recurrenceRules.firstObject;
+const end = rule.recurrenceEnd;
+const hasEnd = !end.isNil();
+JSON.stringify({
+  frequency: Number(rule.frequency),
+  interval: Number(rule.interval),
+  count: hasEnd ? Number(end.occurrenceCount) : 0,
+  until: hasEnd && !end.endDate.isNil() ? Number(end.endDate.timeIntervalSince1970) : null,
+});`,
+    60_000,
+    "JavaScript",
+  );
+  return JSON.parse(raw);
+}
+
+async function readEvent(id: string) {
+  const raw = await runAppleScript(
+    `tell application "Calendar" to tell calendar ${quoted(TEST_CONTAINER_NAME)}
+  set e to event id ${quoted(id)}
+  set s to start date of e
+  set f to end date of e
+  return (summary of e) & linefeed & (location of e) & linefeed & (description of e) & linefeed & ((allday event of e) as text) & linefeed & ${dateStamp("s")} & linefeed & ${dateStamp("f")}
+end tell`,
+    60_000,
+  );
+  const [title, location, notes, allDay, start, end] = raw.split("\n");
+  return { title, location, notes, allDay, start, end };
+}
+
 async function call(
   handlers: Map<string, Handler>,
   name: string,
@@ -510,4 +575,220 @@ end tell`);
     expect(allDay).toBe("true");
     expectIndefiniteEveryFourMonths(recurrence);
   });
+
+  async function withReminder(
+    overrides: Record<string, unknown>,
+    body: (id: string, name: string, created: string) => Promise<void>,
+  ): Promise<void> {
+    const name = uniqueName("reminder");
+    const created = await call(handlers, "reminders_create", {
+      listName: TEST_CONTAINER_NAME,
+      name,
+      ...overrides,
+    });
+    const id = createdId(created, /x-apple-reminder:\/\/[0-9A-F-]{36}/);
+    try {
+      await body(id, name, created);
+    } finally {
+      await call(handlers, "reminders_delete", { listName: TEST_CONTAINER_NAME, id });
+    }
+  }
+
+  test("reminders_update changes the reminder by id and by name", async () => {
+    await withReminder(
+      { notes: "before", dueDate: "2027-01-15 09:00:00", priority: 5 },
+      async (id, name) => {
+        const renamed = `${name}-renamed`;
+
+        await call(handlers, "reminders_update", {
+          listName: TEST_CONTAINER_NAME,
+          id,
+          title: renamed,
+          notes: "after",
+          dueDate: "2027-02-20 14:30:00",
+          priority: 1,
+        });
+        expect(await readReminder(id)).toEqual({
+          name: renamed,
+          notes: "after",
+          priority: "1",
+          due: "2027-2-20 52200",
+          timed: true,
+        });
+
+        await call(handlers, "reminders_update", {
+          listName: TEST_CONTAINER_NAME,
+          name: renamed,
+          dueDate: "2027-03-05",
+        });
+        expect(await readReminder(id)).toEqual({
+          name: renamed,
+          notes: "after",
+          priority: "1",
+          due: "2027-3-5 0",
+          timed: false,
+        });
+
+        await expect(
+          call(handlers, "reminders_update", {
+            listName: TEST_CONTAINER_NAME,
+            name: uniqueName("missing"),
+            notes: "unused",
+          }),
+        ).rejects.toThrow("No matching reminder");
+      },
+    );
+  }, 180_000);
+
+  test("reminders_create attaches an indefinite recurrence", async () => {
+    await withReminder(
+      {
+        dueDate: "2027-01-15 09:00:00",
+        recurrence: { frequency: "monthly", interval: 2 },
+      },
+      async (id, _name, created) => {
+        expect(created).toContain("FREQ=MONTHLY;INTERVAL=2");
+        expect(await readReminderRule(id)).toEqual({
+          frequency: 2,
+          interval: 2,
+          count: 0,
+          until: null,
+        });
+      },
+    );
+  }, 120_000);
+
+  test("reminders_create attaches a recurrence that ends after a count", async () => {
+    await withReminder(
+      {
+        dueDate: "2027-01-15 09:00:00",
+        recurrence: { frequency: "weekly", interval: 1, count: 5 },
+      },
+      async (id) => {
+        expect(await readReminderRule(id)).toEqual({
+          frequency: 1,
+          interval: 1,
+          count: 5,
+          until: null,
+        });
+      },
+    );
+  }, 120_000);
+
+  test("reminders_create attaches a recurrence that ends on a date", async () => {
+    const until = "2027-06-01T12:00:00Z";
+    await withReminder(
+      {
+        dueDate: "2027-01-15 09:00:00",
+        recurrence: { frequency: "daily", interval: 3, until },
+      },
+      async (id) => {
+        expect(await readReminderRule(id)).toEqual({
+          frequency: 0,
+          interval: 3,
+          count: 0,
+          until: new Date(until).getTime() / 1000,
+        });
+      },
+    );
+  }, 120_000);
+
+  async function withEvent(
+    body: (id: string, title: string) => Promise<void>,
+  ): Promise<void> {
+    const title = uniqueName("update-event");
+    const created = await call(handlers, "calendar_create_event", {
+      calendar: TEST_CONTAINER_NAME,
+      title,
+      startDate: "2027-03-10",
+      daysFromNow: 0,
+      hour: 14,
+      minute: 30,
+      durationMinutes: 45,
+      location: "Before Ave",
+      notes: "before",
+      allDay: false,
+    });
+    const id = createdId(created, /[0-9A-F-]{36}/);
+    try {
+      await body(id, title);
+    } finally {
+      await call(handlers, "calendar_delete_event", {
+        calendar: TEST_CONTAINER_NAME,
+        id,
+      });
+    }
+  }
+
+  const update = (input: Record<string, unknown>) =>
+    call(handlers, "calendar_update_event", {
+      calendar: TEST_CONTAINER_NAME,
+      ...input,
+    });
+
+  test("calendar_update_event changes text fields by id and by title", async () => {
+    await withEvent(async (id, title) => {
+      const renamed = `${title}-renamed`;
+
+      await update({ id, newTitle: renamed, location: "After Ave" });
+      expect(await readEvent(id)).toEqual({
+        title: renamed,
+        location: "After Ave",
+        notes: "before",
+        allDay: "false",
+        start: "2027-3-10 52200",
+        end: "2027-3-10 54900",
+      });
+
+      await update({ title: renamed, notes: "after" });
+      expect((await readEvent(id)).notes).toBe("after");
+
+      await expect(
+        update({ title: uniqueName("missing"), notes: "unused" }),
+      ).rejects.toThrow("No matching event");
+    });
+  }, 180_000);
+
+  test("calendar_update_event startDate moves later and earlier, keeping time and duration", async () => {
+    await withEvent(async (id) => {
+      await update({ id, startDate: "2027-03-20" });
+      let event = await readEvent(id);
+      expect(event.start).toBe("2027-3-20 52200");
+      expect(event.end).toBe("2027-3-20 54900");
+
+      await update({ id, startDate: "2027-03-05" });
+      event = await readEvent(id);
+      expect(event.start).toBe("2027-3-5 52200");
+      expect(event.end).toBe("2027-3-5 54900");
+    });
+  }, 180_000);
+
+  test("calendar_update_event hour and duration reschedule within the day", async () => {
+    await withEvent(async (id) => {
+      await update({ id, hour: 20, minute: 15 });
+      let event = await readEvent(id);
+      expect(event.start).toBe("2027-3-10 72900");
+      expect(event.end).toBe("2027-3-10 75600");
+
+      await update({ id, hour: 8, durationMinutes: 90 });
+      event = await readEvent(id);
+      expect(event.start).toBe("2027-3-10 28800");
+      expect(event.end).toBe("2027-3-10 34200");
+    });
+  }, 180_000);
+
+  test("calendar_update_event toggles all-day on and off", async () => {
+    await withEvent(async (id) => {
+      await update({ id, allDay: true });
+      let event = await readEvent(id);
+      expect(event.allDay).toBe("true");
+      expect(event.start).toBe("2027-3-10 0");
+
+      await update({ id, allDay: false, hour: 9, durationMinutes: 30 });
+      event = await readEvent(id);
+      expect(event.allDay).toBe("false");
+      expect(event.start).toBe("2027-3-10 32400");
+      expect(event.end).toBe("2027-3-10 34200");
+    });
+  }, 180_000);
 });
