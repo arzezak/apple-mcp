@@ -6,7 +6,7 @@ import {
   matchLabel,
   parseList,
   quoted,
-  appleScriptDateLiteral,
+  appleScriptDateStatements,
   SLOW_QUERY_TIMEOUT_MS,
   type RunScript,
 } from "./osascript.ts";
@@ -123,7 +123,7 @@ set theEnd to theStart + days - 1`
     : `${setTimeOfDay("theStart", hour, minute)}
 set theEnd to theStart + (${durationMinutes} * minutes)`;
   const startSetup = startDate
-    ? `set theStart to ${appleScriptDateLiteral(startDate)}`
+    ? appleScriptDateStatements("theStart", startDate)
     : `set theStart to current date
 set theStart to theStart + (${daysFromNow} * days)`;
 
@@ -177,7 +177,7 @@ function eventRescheduleStatements({
     "set oldStart to get start date",
     "set oldEnd to get end date",
     startDate
-      ? `set theStart to ${appleScriptDateLiteral(startDate)}`
+      ? appleScriptDateStatements("theStart", startDate)
       : "copy oldStart to theStart",
   ];
   if (allDay === true) lines.push(setTimeOfDay("theStart"));

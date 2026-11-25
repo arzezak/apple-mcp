@@ -13,9 +13,8 @@ describe("reminders.create", () => {
       dueDate: "2026-06-20",
     });
 
-    expect(scripts[0]).toContain(
-      'allday due date:date "20 June 2026 12:00:00 AM"',
-    );
+    expect(scripts[0]).toContain("set day of theDueDate to 20");
+    expect(scripts[0]).toContain("allday due date:theDueDate");
     expect(scripts[0]).not.toContain(", due date:");
   });
 
@@ -27,7 +26,8 @@ describe("reminders.create", () => {
       dueDate: "2026-06-20 09:30:00",
     });
 
-    expect(scripts[0]).toContain('due date:date "20 June 2026 9:30:00 AM"');
+    expect(scripts[0]).toContain("set time of theDueDate to 34200");
+    expect(scripts[0]).toContain(", due date:theDueDate");
     expect(scripts[0]).not.toContain("allday due date:");
   });
 
@@ -36,11 +36,11 @@ describe("reminders.create", () => {
     await createReminders(run).create({
       listName: "Inbox",
       name: "Test reminder",
-      dueDate: "June 20, 2026 9:30 AM",
+      dueDate: "2026-06-20 09:30:00",
       allDay: true,
     });
 
-    expect(scripts[0]).toContain('allday due date:date "June 20, 2026 9:30 AM"');
+    expect(scripts[0]).toContain("allday due date:theDueDate");
     expect(scripts[0]).not.toContain(", due date:");
   });
 
@@ -225,7 +225,8 @@ describe("reminders.update", () => {
     expect(scripts[0]).toContain('tell (first reminder whose id is "x-apple-reminder://ABC")');
     expect(scripts[0]).toContain('error "No matching reminder."');
     expect(scripts[0]).toContain('set name to "New"');
-    expect(scripts[0]).toContain('set due date to date "11 December 2026 2:00:00 PM"');
+    expect(scripts[0]).toContain("set time of theDueDate to 50400");
+    expect(scripts[0]).toContain("set due date to theDueDate");
     expect(scripts[0]).not.toContain("set body");
     expect(scripts[0]).not.toContain("set priority");
   });
@@ -233,7 +234,8 @@ describe("reminders.update", () => {
   test("date-only due dates become all-day", async () => {
     const { run, scripts } = recordingRun();
     await createReminders(run).update({ listName: "Inbox", name: "a", dueDate: "2026-12-12" });
-    expect(scripts[0]).toContain('set allday due date to date "12 December 2026 12:00:00 AM"');
+    expect(scripts[0]).toContain("set day of theDueDate to 12");
+    expect(scripts[0]).toContain("set allday due date to theDueDate");
   });
 
   test("rejects an empty update before running anything", async () => {

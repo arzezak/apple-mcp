@@ -9,7 +9,7 @@ import {
   requireMatching,
   parseList,
   quoted,
-  appleScriptDateLiteral,
+  appleScriptDateStatements,
   hasTimeComponent,
   joinLinefeedScript,
   scopeExpression,
@@ -126,19 +126,20 @@ function reminderCreateScript({
 }): string {
   const props: string[] = [`name:${quoted(name)}`];
   if (notes) props.push(`body:${quoted(notes)}`);
-  if (dueDate) {
-    const [property, value] = dueDateAssignment(dueDate, allDay);
-    props.push(`${property}:${value}`);
-  }
+  if (dueDate) props.push(`${dueDateProperty(dueDate, allDay)}:theDueDate`);
   if (priority !== undefined) props.push(`priority:${priority}`);
 
-  return `tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${props.join(", ")}}`;
+  return `${dueDateSetup(dueDate)}tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${props.join(", ")}}`;
 }
 
-function dueDateAssignment(dueDate: string, allDay?: boolean): [string, string] {
-  const property =
-    allDay || !hasTimeComponent(dueDate) ? "allday due date" : "due date";
-  return [property, appleScriptDateLiteral(dueDate)];
+function dueDateProperty(dueDate: string, allDay?: boolean): string {
+  return allDay || !hasTimeComponent(dueDate) ? "allday due date" : "due date";
+}
+
+function dueDateSetup(dueDate?: string): string {
+  if (!dueDate) return "";
+
+  return `${appleScriptDateStatements("theDueDate", dueDate)}\n`;
 }
 
 function reminderUpdateScript(
@@ -150,14 +151,13 @@ function reminderUpdateScript(
   if (title !== undefined) sets.push(`set name to ${quoted(title)}`);
   if (notes !== undefined) sets.push(`set body to ${quoted(notes)}`);
   if (dueDate !== undefined) {
-    const [property, value] = dueDateAssignment(dueDate, allDay);
-    sets.push(`set ${property} to ${value}`);
+    sets.push(`set ${dueDateProperty(dueDate, allDay)} to theDueDate`);
   }
   if (priority !== undefined) sets.push(`set priority to ${priority}`);
   if (sets.length === 0) {
     throw new Error("Nothing to update. Provide a title, notes, dueDate or priority.");
   }
-  return `tell application "Reminders" to tell list ${quoted(listName)}
+  return `${dueDateSetup(dueDate)}tell application "Reminders" to tell list ${quoted(listName)}
   ${requireMatching("reminder", clause)}
   tell (first reminder whose ${clause})
     ${sets.join("\n    ")}
@@ -306,7 +306,7 @@ const dueDateField = z
   .string()
   .optional()
   .describe(
-    'Due date string in locale format, e.g. "2026-06-10 09:00:00" or "June 10, 2026 9:00 AM"',
+    'Due date as YYYY-MM-DD (all-day) or YYYY-MM-DD HH:MM[:SS], e.g. "2026-06-10 09:00:00"',
   );
 const priorityField = z
   .number()

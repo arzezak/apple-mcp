@@ -105,7 +105,8 @@ describe("calendar.updateEvent", () => {
 
   test("startDate alone keeps the time of day and the duration", async () => {
     const script = await updateScript({ calendar: "Home", id: "UID-1", startDate: "2026-12-20" });
-    expect(script).toContain('set theStart to date "20 December 2026 12:00:00 AM"');
+    expect(script).toContain("set month of theStart to 12");
+    expect(script).toContain("set day of theStart to 20");
     expect(script).toContain("set theStart to theStart + (time of oldStart)");
     expect(script).toContain("set theEnd to theStart + (oldEnd - oldStart)");
     expect(script).toContain("if theStart < oldEnd then");
@@ -238,8 +239,8 @@ describe("calendar.createEvent", () => {
       minute: 15,
     });
 
-    expect(script).toContain('set theStart to date "1 October 2026 12:00:00 AM"');
-    expect(script).not.toContain("set theStart to current date");
+    expect(script).toContain("set month of theStart to 10");
+    expect(script).toContain("set day of theStart to 1\nset time of theStart to 0");
     expect(script).not.toContain("99 * days");
     expect(script).toContain("set hours of theStart to 9");
     expect(script).toContain("set minutes of theStart to 15");
