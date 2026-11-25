@@ -80,7 +80,9 @@ function incompleteRemindersScript({
 }): string {
   const filter =
     "completed is false" + (query ? ` and name contains ${quoted(query)}` : "");
+
   const prefix = listName ? '"- "' : '(name of l) & ": "';
+
   return `tell application "Reminders"
   set outputLines to {}
   repeat with l in ${scopeExpression("list", listName)}
@@ -147,13 +149,17 @@ function reminderUpdateScript(
   const sets: string[] = [];
   if (title !== undefined) sets.push(`set name to ${quoted(title)}`);
   if (notes !== undefined) sets.push(`set body to ${quoted(notes)}`);
+
   if (dueDate !== undefined) {
     sets.push(`set ${dueDateProperty(dueDate, allDay)} to theDueDate`);
   }
+
   if (priority !== undefined) sets.push(`set priority to ${priority}`);
+
   if (sets.length === 0) {
     throw new Error("Nothing to update. Provide a title, notes, dueDate or priority.");
   }
+
   return `${dueDateSetup(dueDate)}tell application "Reminders" to tell list ${quoted(listName)}
   ${requireMatching("reminder", clause)}
   tell (first reminder whose ${clause})
@@ -169,12 +175,14 @@ const EK_FREQUENCY = { daily: 0, weekly: 1, monthly: 2, yearly: 3 } as const;
 // calendarItemIdentifier (checked 2026-11-05).
 function reminderRecurrenceScript(id: string, recurrence: Recurrence): string {
   const uuid = id.replace(/^x-apple-reminder:\/\//, "");
+
   const end =
     recurrence.count !== undefined
       ? `$.EKRecurrenceEnd.recurrenceEndWithOccurrenceCount(${recurrence.count})`
       : recurrence.until !== undefined
         ? `$.EKRecurrenceEnd.recurrenceEndWithEndDate($.NSDate.dateWithTimeIntervalSince1970(${recurrenceUntilDate(recurrence.until).getTime() / 1000}))`
         : "$()";
+
   return `${eventStoreStatements("reminders")}
 const item = store.calendarItemWithIdentifier(${JSON.stringify(uuid)});
 if (item.isNil()) throw new Error(${JSON.stringify(`No reminder with id ${id}.`)});
@@ -209,12 +217,14 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
       const script = includeCompleted
         ? allRemindersScript(listName)
         : incompleteRemindersScript({ listName });
+
       return parseList(await run(script));
     },
 
     async create({ recurrence, ...input }) {
       const rule = recurrence && recurrenceRule(recurrence);
       const id = parseReminderId(await run(reminderCreateScript(input)));
+
       if (recurrence) {
         try {
           await run(reminderRecurrenceScript(id, recurrence), undefined, "JavaScript");
@@ -224,6 +234,7 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
           );
         }
       }
+
       return { id, recurrenceRule: rule };
     },
 
@@ -234,6 +245,7 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
 
     async complete({ listName, name, id }) {
       const { clause } = matchClause({ nameProperty: "name", name, id });
+
       await run(
         `tell application "Reminders" to tell list ${quoted(listName)} to set completed of (first reminder whose ${clause}) to true`,
       );
@@ -241,6 +253,7 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
 
     async delete({ listName, name, id }) {
       const { clause } = matchClause({ nameProperty: "name", name, id });
+
       await run(`tell application "Reminders" to tell list ${quoted(listName)}
   ${deleteFirstMatching("reminder", clause)}
 end tell`);
@@ -257,6 +270,7 @@ end tell`);
           SLOW_QUERY_TIMEOUT_MS,
         );
       }
+
       return parseList(
         await run(incompleteRemindersScript({ query }), SLOW_QUERY_TIMEOUT_MS),
       );

@@ -7,10 +7,12 @@ export function recordingRun(output = ""): {
 } {
   const scripts: string[] = [];
   const languages: (ScriptLanguage | undefined)[] = [];
+
   const run: RunScript = async (script, _timeoutMs, language) => {
     scripts.push(script);
     languages.push(language);
     return output;
   };
+
   return { run, scripts, languages };
 }

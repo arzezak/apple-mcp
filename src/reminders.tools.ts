@@ -45,6 +45,7 @@ export function registerRemindersTools(
     async (input) => {
       const { id, recurrenceRule } = await reminders.create(input);
       const suffix = recurrenceRule ? ` with recurrence ${recurrenceRule}` : "";
+
       return textResult(
         `Created reminder "${input.name}" in list "${input.listName}"${suffix} (id: ${id}).`,
       );

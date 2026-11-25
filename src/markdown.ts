@@ -32,10 +32,12 @@ function convertInlineFormatting(line: string): string {
   // are ASCII and untouched by escaping, and the formatting tags we emit below are
   // added after escaping, so they survive as real markup.
   let result = escapeHtml(line);
+
   result = result.replace(
     /`([^`]+)`/g,
     '<font face="Courier"><tt>$1</tt></font>',
   );
+
   result = result.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   result = result.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
   return result;
@@ -48,12 +50,15 @@ function consumeFencedCodeBlock(
 ): number | null {
   if (!lines[i].startsWith("```")) return null;
   i++;
+
   while (i < lines.length && !lines[i].startsWith("```")) {
     output.push(
       `<div><font face="Courier"><tt>${escapeHtml(lines[i])}</tt></font></div>`,
     );
+
     i++;
   }
+
   if (i < lines.length) i++;
   return i;
 }
@@ -78,11 +83,13 @@ function consumeListBlock(
   const kind = LIST_KINDS.find((k) => k.marker.test(lines[i]));
   if (!kind) return null;
   output.push(`<${kind.tag}>`);
+
   while (i < lines.length && kind.marker.test(lines[i])) {
     const content = lines[i].replace(kind.marker, "");
     output.push(`<li>${convertInlineFormatting(content)}</li>`);
     i++;
   }
+
   output.push(`</${kind.tag}>`);
   return i;
 }
@@ -94,6 +101,7 @@ function consumeSingleLine(
 ): number {
   const line = lines[i];
   const heading = line.match(/^(#{1,3})\s+(.+)/);
+
   if (heading) {
     const tag = `h${heading[1].length}`;
     output.push(`<${tag}>${convertInlineFormatting(heading[2])}</${tag}>`);
@@ -102,5 +110,6 @@ function consumeSingleLine(
   } else {
     output.push(`<div>${convertInlineFormatting(line)}</div>`);
   }
+
   return i + 1;
 }

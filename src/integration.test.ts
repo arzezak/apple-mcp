@@ -15,10 +15,12 @@ type Handler = (input: Record<string, unknown>) => Promise<{
 
 function buildHandlers(): Map<string, Handler> {
   const handlers = new Map<string, Handler>();
+
   const captureServer = {
     registerTool: (name: string, _meta: unknown, handler: Handler) =>
       handlers.set(name, handler),
   } as any;
+
   registerCalendarTools(captureServer);
   registerNotesTools(captureServer);
   registerRemindersTools(captureServer);
@@ -38,6 +40,7 @@ const CONTAINERS = {
 function ensureContainerScript(app: keyof typeof CONTAINERS): string {
   const { kind, make } = CONTAINERS[app];
   const name = quoted(TEST_CONTAINER_NAME);
+
   return `if ${name} is not in (name of every ${kind}) then
     ${make}make new ${kind} with properties {name:${name}}
   end if
@@ -85,6 +88,7 @@ async function readReminder(id: string) {
 end tell`,
     60_000,
   );
+
   const [name, notes, priority, due] = raw.split("\n");
   return { name, notes, priority, due, timed: await reminderHasDueTime(id) };
 }
@@ -93,6 +97,7 @@ end tell`,
 // EventKit's due date components can tell the two apart.
 async function reminderHasDueTime(id: string): Promise<boolean> {
   const uuid = id.replace("x-apple-reminder://", "");
+
   const raw = await runAppleScript(
     `ObjC.import("EventKit");
 const store = $.EKEventStore.alloc.init;
@@ -100,11 +105,13 @@ String(Number(store.calendarItemWithIdentifier(${JSON.stringify(uuid)}).dueDateC
     60_000,
     "JavaScript",
   );
+
   return raw === "true";
 }
 
 async function readReminderRule(id: string) {
   const uuid = id.replace("x-apple-reminder://", "");
+
   const raw = await runAppleScript(
     `ObjC.import("EventKit");
 const store = $.EKEventStore.alloc.init;
@@ -120,6 +127,7 @@ JSON.stringify({
     60_000,
     "JavaScript",
   );
+
   return JSON.parse(raw);
 }
 
@@ -133,6 +141,7 @@ async function readEvent(id: string) {
 end tell`,
     60_000,
   );
+
   const [title, location, notes, allDay, start, end] = raw.split("\n");
   return { title, location, notes, allDay, start, end };
 }
@@ -175,6 +184,7 @@ end tell`, 110_000);
 
     const [listId, firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
       raw.split("\n");
+
     expect(listId).toBeTruthy();
     expectDifferentIds(firstId, secondId);
     expect(foundByIdTitle).toBe(title);
@@ -213,6 +223,7 @@ end tell`, 110_000);
 
     const [firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
       raw.split("\n");
+
     expectDifferentIds(firstId, secondId);
     expect(foundByIdTitle).toBe(title);
     expect(foundByTitleAndBodyId).toBe(secondId);
@@ -248,6 +259,7 @@ end tell`, 110_000);
 
     const [firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
       raw.split("\n");
+
     expectDifferentIds(firstId, secondId);
     expect(foundByIdTitle).toBe(title);
     expect(foundByTitleAndBodyId).toBe(secondId);
@@ -272,6 +284,7 @@ end tell`),
   test("calendar_list_calendars returns a JSON array", async () => {
     const text = await call(handlers, "calendar_list_calendars", {});
     const list = JSON.parse(text);
+
     expect(Array.isArray(list)).toBe(true);
     expect(list.length).toBeGreaterThan(0);
   });
@@ -282,6 +295,7 @@ end tell`),
       daysAhead: 7,
       daysBack: 0,
     });
+
     expect(typeof text).toBe("string");
     expect(text.length).toBeGreaterThan(0);
   });
@@ -292,12 +306,14 @@ end tell`),
       calendar: TEST_CONTAINER_NAME,
       daysAhead: 7,
     });
+
     expect(typeof text).toBe("string");
   });
 
   test("notes_list_folders returns a JSON array containing Test", async () => {
     const text = await call(handlers, "notes_list_folders", {});
     const list = JSON.parse(text);
+
     expect(list).toContain(TEST_CONTAINER_NAME);
   });
 
@@ -305,6 +321,7 @@ end tell`),
     const text = await call(handlers, "notes_list", {
       folder: TEST_CONTAINER_NAME,
     });
+
     expect(typeof text).toBe("string");
     expect(text.length).toBeGreaterThan(0);
   });
@@ -314,12 +331,14 @@ end tell`),
       query: "a",
       searchContent: false,
     });
+
     expect(Array.isArray(JSON.parse(text))).toBe(true);
   });
 
   test("reminders_list_lists returns a JSON array containing Test", async () => {
     const text = await call(handlers, "reminders_list_lists", {});
     const list = JSON.parse(text);
+
     expect(list).toContain(TEST_CONTAINER_NAME);
   });
 
@@ -328,6 +347,7 @@ end tell`),
       listName: TEST_CONTAINER_NAME,
       includeCompleted: false,
     });
+
     expect(typeof text).toBe("string");
     expect(text.length).toBeGreaterThan(0);
   });
@@ -337,7 +357,9 @@ end tell`),
       query: "a",
       includeCompleted: false,
     });
+
     expect(typeof text).toBe("string");
+
     if (text !== "No reminders found.") {
       expect(text.split("\n")[0]).toMatch(/^.+: .+ \| id: x-apple-reminder:\/\//);
     }
@@ -345,12 +367,15 @@ end tell`),
 
   test("delete tools fail when nothing matches", async () => {
     const missing = uniqueName("missing");
+
     await expect(
       call(handlers, "reminders_delete", { listName: TEST_CONTAINER_NAME, id: missing }),
     ).rejects.toThrow("No matching reminder");
+
     await expect(
       call(handlers, "calendar_delete_event", { calendar: TEST_CONTAINER_NAME, id: missing }),
     ).rejects.toThrow("No matching event");
+
     await expect(
       call(handlers, "notes_delete", { name: missing }),
     ).rejects.toThrow("No matching note");
@@ -366,7 +391,9 @@ end tell`),
       dueDate: "2026-12-31 09:00:00",
       priority: 5,
     });
+
     const id = createdId(created, /x-apple-reminder:\/\/[0-9A-F-]{36}/);
+
     expect(
       await runAppleScript(
         `tell application "Reminders" to tell list ${quoted(TEST_CONTAINER_NAME)} to name of (first reminder whose id is ${quoted(id)})`,
@@ -377,6 +404,7 @@ end tell`),
       listName: TEST_CONTAINER_NAME,
       includeCompleted: false,
     });
+
     expect(listed).toContain(name);
     expect(listed).toContain("due:");
 
@@ -389,6 +417,7 @@ end tell`),
       listName: TEST_CONTAINER_NAME,
       includeCompleted: true,
     });
+
     expect(withCompleted).toContain(name);
 
     await call(handlers, "reminders_delete", {
@@ -400,6 +429,7 @@ end tell`),
       listName: TEST_CONTAINER_NAME,
       includeCompleted: true,
     });
+
     expect(afterDelete).not.toContain(name);
   }, 15_000);
 
@@ -414,6 +444,7 @@ end tell`),
     });
 
     const html = await call(handlers, "notes_read", { name: title, html: true });
+
     // Notes rewrites <h1>/<h2> into styled spans on storage; assert on text
     // content and the inline formatting tags that do survive.
     expect(html).toContain("Heading");
@@ -429,6 +460,7 @@ end tell`),
       name: renamed,
       html: true,
     });
+
     expect(editedHtml).toContain("Updated");
 
     await call(handlers, "notes_move", {
@@ -443,6 +475,7 @@ end tell`),
       searchContent: false,
       folder: TEST_CONTAINER_NAME,
     });
+
     expect(JSON.parse(afterDelete)).not.toContain(renamed);
   });
 
@@ -461,7 +494,9 @@ end tell`),
       notes: "integration test",
       allDay: false,
     });
+
     const uid = createdId(created, /[0-9A-F-]{36}/);
+
     expect(
       await runAppleScript(
         `tell application "Calendar" to tell calendar ${quoted(TEST_CONTAINER_NAME)} to summary of (first event whose uid is ${quoted(uid)})`,
@@ -473,6 +508,7 @@ end tell`),
       calendar: TEST_CONTAINER_NAME,
       daysAhead: 3,
     });
+
     expect(found).toContain(timedTitle);
     expect(found).toContain(" @ Integration Ave");
 
@@ -491,6 +527,7 @@ end tell`),
       daysAhead: 3,
       daysBack: 0,
     });
+
     expect(listed).toContain(timedTitle);
     expect(listed).toContain(allDayTitle);
 
@@ -498,6 +535,7 @@ end tell`),
       calendar: TEST_CONTAINER_NAME,
       id: uid,
     });
+
     await call(handlers, "calendar_delete_event", {
       calendar: TEST_CONTAINER_NAME,
       title: allDayTitle,
@@ -508,6 +546,7 @@ end tell`),
       calendar: TEST_CONTAINER_NAME,
       daysAhead: 3,
     });
+
     expect(afterDelete).not.toContain(timedTitle);
   }, 15_000);
 
@@ -564,6 +603,7 @@ end tell`);
       uniqueName("recurring-event"),
       {},
     );
+
     expectIndefiniteEveryFourMonths(recurrence);
   });
 
@@ -572,6 +612,7 @@ end tell`);
       uniqueName("recurring-allday-event"),
       { hour: 0, durationMinutes: 60, allDay: true },
     );
+
     expect(allDay).toBe("true");
     expectIndefiniteEveryFourMonths(recurrence);
   });
@@ -581,12 +622,15 @@ end tell`);
     body: (id: string, name: string, created: string) => Promise<void>,
   ): Promise<void> {
     const name = uniqueName("reminder");
+
     const created = await call(handlers, "reminders_create", {
       listName: TEST_CONTAINER_NAME,
       name,
       ...overrides,
     });
+
     const id = createdId(created, /x-apple-reminder:\/\/[0-9A-F-]{36}/);
+
     try {
       await body(id, name, created);
     } finally {
@@ -608,6 +652,7 @@ end tell`);
           dueDate: "2027-02-20 14:30:00",
           priority: 1,
         });
+
         expect(await readReminder(id)).toEqual({
           name: renamed,
           notes: "after",
@@ -621,6 +666,7 @@ end tell`);
           name: renamed,
           dueDate: "2027-03-05",
         });
+
         expect(await readReminder(id)).toEqual({
           name: renamed,
           notes: "after",
@@ -648,6 +694,7 @@ end tell`);
       },
       async (id, _name, created) => {
         expect(created).toContain("FREQ=MONTHLY;INTERVAL=2");
+
         expect(await readReminderRule(id)).toEqual({
           frequency: 2,
           interval: 2,
@@ -677,6 +724,7 @@ end tell`);
 
   test("reminders_create attaches a recurrence that ends on a date", async () => {
     const until = "2027-06-01T12:00:00Z";
+
     await withReminder(
       {
         dueDate: "2027-01-15 09:00:00",
@@ -697,6 +745,7 @@ end tell`);
     body: (id: string, title: string) => Promise<void>,
   ): Promise<void> {
     const title = uniqueName("update-event");
+
     const created = await call(handlers, "calendar_create_event", {
       calendar: TEST_CONTAINER_NAME,
       title,
@@ -709,7 +758,9 @@ end tell`);
       notes: "before",
       allDay: false,
     });
+
     const id = createdId(created, /[0-9A-F-]{36}/);
+
     try {
       await body(id, title);
     } finally {
@@ -731,6 +782,7 @@ end tell`);
       const renamed = `${title}-renamed`;
 
       await update({ id, newTitle: renamed, location: "After Ave" });
+
       expect(await readEvent(id)).toEqual({
         title: renamed,
         location: "After Ave",

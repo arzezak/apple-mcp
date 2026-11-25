@@ -8,6 +8,7 @@ describe("passthrough", () => {
 
   test("existing HTML is returned as-is", () => {
     const html = "<div>already formatted</div>";
+
     expect(markdownToHtml(html)).toBe(html);
   });
 });
@@ -91,6 +92,7 @@ describe("fenced code blocks", () => {
 
   test("HTML inside fenced block triggers looksLikeHtml passthrough", () => {
     const input = "```\n<div>test</div>\n```";
+
     expect(markdownToHtml(input)).toBe(input);
   });
 
@@ -146,11 +148,13 @@ describe("HTML escaping", () => {
 describe("current inline code formatting limitations", () => {
   test("bold markers inside inline code are currently processed as bold", () => {
     const result = markdownToHtml("use `**not bold**` here");
+
     expect(result).toContain("<b>not bold</b>");
   });
 
   test("italic markers inside inline code are currently processed as italic", () => {
     const result = markdownToHtml("use `*x*` here");
+
     expect(result).toContain("<i>");
   });
 });

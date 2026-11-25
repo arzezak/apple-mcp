@@ -56,6 +56,7 @@ export function registerNotesTools(
     },
     async (input) => {
       await notes.create(input);
+
       return textResult(
         `Created note "${input.title}"${input.folder ? ` in folder "${input.folder}"` : ""}.`,
       );
@@ -82,6 +83,7 @@ export function registerNotesTools(
     },
     async (input) => {
       await notes.move(input);
+
       return textResult(
         `Moved note "${input.name}" to folder "${input.targetFolder}".`,
       );

@@ -44,6 +44,7 @@ export function registerCalendarTools(
     async (input) => {
       const { id, recurrenceRule } = await calendar.createEvent(input);
       const suffix = recurrenceRule ? ` with recurrence ${recurrenceRule}` : "";
+
       return textResult(
         `Created event "${input.title}" on calendar "${input.calendar}"${suffix} (id: ${id}).`,
       );
@@ -71,6 +72,7 @@ export function registerCalendarTools(
     },
     async (input) => {
       await calendar.updateEvent(input);
+
       return textResult(
         `Updated event ${matchLabel({ name: input.title, id: input.id })}.`,
       );
@@ -87,6 +89,7 @@ export function registerCalendarTools(
     },
     async (input) => {
       await calendar.deleteEvent(input);
+
       return textResult(
         `Deleted event ${matchLabel({ name: input.title, id: input.id })}.`,
       );

@@ -58,6 +58,7 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
 
     read({ name, html = true }) {
       const prop = html ? "body" : "plaintext";
+
       return run(
         `tell application "Notes" to ${prop} of first note whose name is ${quoted(name)}`,
       );
@@ -65,6 +66,7 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
 
     async create({ title, body, folder }) {
       const target = folder ? `tell folder ${quoted(folder)} to ` : "";
+
       await run(
         `tell application "Notes" to ${target}make new note with properties {name:${quoted(title)}, body:${quoted(markdownToHtml(body))}}`,
       );
@@ -101,13 +103,17 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
       if (title === undefined && body === undefined) {
         throw new Error("Nothing to update. Provide a title, body, or both.");
       }
+
       if (title === "") throw new Error("Title cannot be empty.");
+
       const lines = [
         `tell application "Notes"`,
         `  set n to first note whose name is ${quoted(name)}`,
       ];
+
       if (body !== undefined)
         lines.push(`  set body of n to ${quoted(markdownToHtml(body))}`);
+
       if (title !== undefined) lines.push(`  set name of n to ${quoted(title)}`);
       lines.push("end tell");
       await run(lines.join("\n"));

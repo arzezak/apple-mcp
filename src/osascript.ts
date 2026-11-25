@@ -23,9 +23,11 @@ export function runAppleScript(
           const msg = err.killed
             ? `timed out after ${timeoutMs / 1000}s`
             : stderr?.trim() || err.message;
+
           reject(new Error(`AppleScript error: ${msg}`));
           return;
         }
+
         resolve(stdout.trim());
       },
     );
@@ -50,6 +52,7 @@ export function matchClause({
   if ((name === undefined) === (id === undefined)) {
     throw new Error("Provide exactly one of name or id.");
   }
+
   return {
     clause:
       id !== undefined
@@ -80,6 +83,7 @@ export function scopeExpression(kind: string, name?: string): string {
 
 export function parseList(raw: string): string[] {
   if (!raw || raw === "missing value") return [];
+
   return raw
     .split("\n")
     .map((s) => s.trim())

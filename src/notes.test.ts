@@ -5,6 +5,7 @@ import { recordingRun } from "./testing.ts";
 describe("notes", () => {
   test("create converts markdown and scopes to the folder", async () => {
     const { run, scripts } = recordingRun();
+
     await createNotes(run).create({
       title: "Plan",
       body: "# Title\n- item",
@@ -18,17 +19,21 @@ describe("notes", () => {
 
   test("edit rejects an empty update before running anything", async () => {
     const { run, scripts } = recordingRun();
+
     await expect(createNotes(run).edit({ name: "Plan" })).rejects.toThrow(
       "Nothing to update",
     );
+
     expect(scripts).toEqual([]);
   });
 
   test("edit rejects an empty title before running anything", async () => {
     const { run, scripts } = recordingRun();
+
     await expect(
       createNotes(run).edit({ name: "Plan", title: "" }),
     ).rejects.toThrow("Title cannot be empty");
+
     expect(scripts).toEqual([]);
   });
 
@@ -42,12 +47,14 @@ describe("notes", () => {
 
   test("read picks plaintext when html is off", async () => {
     const { run, scripts } = recordingRun("hello");
+
     expect(await createNotes(run).read({ name: "Plan", html: false })).toBe("hello");
     expect(scripts[0]).toContain("plaintext of first note");
   });
 
   test("search scopes to a folder and body text", async () => {
     const { run, scripts } = recordingRun("Plan\nNotes, misc");
+
     const names = await createNotes(run).search({
       query: "x",
       searchContent: true,

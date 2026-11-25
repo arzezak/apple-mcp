@@ -43,6 +43,7 @@ describe("parseList", () => {
 describe("nameListScript", () => {
   test("joins the list with linefeed so parseList can split unambiguously", () => {
     const script = nameListScript("Reminders", "name of every list");
+
     expect(script).toBe(
       `tell application "Reminders" to set resultList to name of every list
 set AppleScript's text item delimiters to linefeed
@@ -52,6 +53,7 @@ resultList as text`,
 
   test("round-trips with parseList: comma-space names survive", () => {
     const joined = "Shopping, urgent\nWork\nHome";
+
     expect(parseList(joined)).toEqual(["Shopping, urgent", "Work", "Home"]);
   });
 });
@@ -109,6 +111,7 @@ describe("matchClause", () => {
 
   test("rejects neither or both", () => {
     expect(() => matchClause({ nameProperty: "name" })).toThrow("exactly one");
+
     expect(() => matchClause({ nameProperty: "name", name: "x", id: "y" })).toThrow(
       "exactly one",
     );

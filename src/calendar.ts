@@ -67,6 +67,7 @@ function calendarCreateEventScript({
 set theEnd to theStart + days - 1`
     : `${setTimeOfDay("theStart", hour, minute)}
 set theEnd to theStart + (${durationMinutes} * minutes)`;
+
   const startSetup = startDate
     ? appleScriptDateStatements("theStart", startDate)
     : `set theStart to current date
@@ -89,6 +90,7 @@ function eventSpecifier({ title, id }: { title?: string; id?: string }): string 
   if ((title === undefined) === (id === undefined)) {
     throw new Error("Provide exactly one of title or id.");
   }
+
   return id !== undefined
     ? `event id ${quoted(id)}`
     : `first event whose summary is ${quoted(title!)}`;
@@ -112,6 +114,7 @@ function eventRescheduleStatements({
       ? appleScriptDateStatements("theStart", startDate)
       : "copy oldStart to theStart",
   ];
+
   if (allDay === true) lines.push(setTimeOfDay("theStart"));
   else if (hour !== undefined) lines.push(setTimeOfDay("theStart", hour, minute));
   else if (startDate) lines.push("set theStart to theStart + (time of oldStart)");
@@ -122,6 +125,7 @@ function eventRescheduleStatements({
   else lines.push("set theEnd to theStart + (oldEnd - oldStart)");
 
   if (allDay !== undefined) lines.push(`set allday event to ${allDay}`);
+
   lines.push(`if theStart < oldEnd then
       set start date to theStart
       set end date to theEnd
@@ -129,6 +133,7 @@ function eventRescheduleStatements({
       set end date to theEnd
       set start date to theStart
     end if`);
+
   return lines.join("\n    ");
 }
 
@@ -146,18 +151,22 @@ function calendarUpdateEventScript(
   if (newTitle !== undefined) sets.push(`set summary to ${quoted(newTitle)}`);
   if (location !== undefined) sets.push(`set location to ${quoted(location)}`);
   if (notes !== undefined) sets.push(`set description to ${quoted(notes)}`);
+
   const reschedules =
     changes.startDate !== undefined ||
     changes.hour !== undefined ||
     changes.minute !== undefined ||
     changes.durationMinutes !== undefined ||
     changes.allDay !== undefined;
+
   if (reschedules) sets.push(eventRescheduleStatements(changes));
+
   if (sets.length === 0) {
     throw new Error(
       "Nothing to update. Provide newTitle, location, notes, or a new date/time.",
     );
   }
+
   return `tell application "Calendar" to tell calendar ${quoted(calendar)}
   ${requireEvent(specifier)}
   tell ${specifier}
@@ -227,6 +236,7 @@ export function createCalendar(
 
     async deleteEvent({ calendar, title, id }) {
       const specifier = eventSpecifier({ title, id });
+
       await run(`tell application "Calendar" to tell calendar ${quoted(calendar)}
   ${requireEvent(specifier)}
   delete ${specifier}

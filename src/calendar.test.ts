@@ -82,6 +82,7 @@ describe("calendar.listEvents and searchEvents", () => {
         end: new Date(2026, 10, 25, 23, 59, 59),
       },
     ]);
+
     expect(lines[0]).toStartWith("Home: Standup | ");
   });
 
@@ -138,6 +139,7 @@ describe("calendar.updateEvent", () => {
     expect(await updateScript({ calendar: "Home", id: "UID-1", newTitle: "x" })).toContain(
       'tell event id "UID-1"',
     );
+
     expect(await updateScript({ calendar: "Home", title: "Old", newTitle: "x" })).toContain(
       'tell first event whose summary is "Old"',
     );
@@ -145,6 +147,7 @@ describe("calendar.updateEvent", () => {
 
   test("checks existence and sets only the given text fields", async () => {
     const script = await updateScript({ calendar: "Home", id: "UID-1", location: "Room 3" });
+
     expect(script).toContain('if not (exists event id "UID-1") then error "No matching event."');
     expect(script).toContain('set location to "Room 3"');
     expect(script).not.toContain("set summary");
@@ -153,6 +156,7 @@ describe("calendar.updateEvent", () => {
 
   test("startDate alone keeps the time of day and the duration", async () => {
     const script = await updateScript({ calendar: "Home", id: "UID-1", startDate: "2026-12-20" });
+
     expect(script).toContain("set month of theStart to 12");
     expect(script).toContain("set day of theStart to 20");
     expect(script).toContain("set theStart to theStart + (time of oldStart)");
@@ -168,6 +172,7 @@ describe("calendar.updateEvent", () => {
       hour: 16,
       durationMinutes: 45,
     });
+
     expect(script).toContain("copy oldStart to theStart");
     expect(script).toContain("set hours of theStart to 16");
     expect(script).toContain("set theEnd to theStart + (45 * minutes)");
@@ -175,6 +180,7 @@ describe("calendar.updateEvent", () => {
 
   test("allDay spans the whole day and toggles the flag", async () => {
     const script = await updateScript({ calendar: "Home", id: "UID-1", allDay: true });
+
     expect(script).toContain("set theEnd to theStart + days - 1");
     expect(script).toContain("set allday event to true");
   });
@@ -182,12 +188,15 @@ describe("calendar.updateEvent", () => {
   test("rejects an empty update and ambiguous matches before running anything", async () => {
     const { run, scripts } = recordingRun();
     const calendar = createCalendar(run);
+
     await expect(calendar.updateEvent({ calendar: "Home", id: "UID-1" })).rejects.toThrow(
       "Nothing to update",
     );
+
     await expect(
       calendar.updateEvent({ calendar: "Home", newTitle: "x" }),
     ).rejects.toThrow("exactly one");
+
     expect(scripts).toEqual([]);
   });
 });
@@ -205,6 +214,7 @@ describe("calendar.deleteEvent", () => {
   test("deletes the first event with an exact title", async () => {
     const { run, scripts } = recordingRun();
     await createCalendar(run).deleteEvent({ calendar: "Home", title: "Standup" });
+
     expect(scripts[0]).toContain('delete first event whose summary is "Standup"');
   });
 });
@@ -212,6 +222,7 @@ describe("calendar.deleteEvent", () => {
 describe("calendar.createEvent", () => {
   test("returns the uid from the script", async () => {
     const { created } = await createScript({ calendar: "Home", title: "x", hour: 9 });
+
     expect(created).toEqual({ id: "UID-1", recurrenceRule: undefined });
   });
 
@@ -225,9 +236,11 @@ describe("calendar.createEvent", () => {
     });
 
     expect(script).toContain("set theEnd to theStart + days - 1");
+
     expect(script).toContain(
       "set createdEvent to make new event with properties {start date:theStart, end date:theEnd, summary:",
     );
+
     expect(script).toContain("allday event:true");
     expect(script).toContain("return uid of createdEvent");
   });
@@ -317,6 +330,7 @@ describe("calendar.createEvent", () => {
       hour: 9,
       recurrence: { frequency: "weekly", interval: 2, count: 6 },
     });
+
     expect(created.recurrenceRule).toBe("FREQ=WEEKLY;INTERVAL=2;COUNT=6");
   });
 
@@ -327,6 +341,7 @@ describe("calendar.createEvent", () => {
       hour: 9,
       recurrence: { frequency: "yearly", interval: 1, until: "2027-01-15T12:30:00Z" },
     });
+
     expect(created.recurrenceRule).toBe("FREQ=YEARLY;INTERVAL=1;UNTIL=20270115T123000Z");
   });
 

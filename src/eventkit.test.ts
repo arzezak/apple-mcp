@@ -14,11 +14,13 @@ describe("eventKitEvents", () => {
       location: "",
       id: "UID-1",
     };
+
     const { run, languages } = recordingRun(JSON.stringify([row]));
 
     const events = await eventKitEvents(run)(RANGE);
 
     expect(languages).toEqual(["JavaScript"]);
+
     expect(events).toEqual([
       {
         ...row,

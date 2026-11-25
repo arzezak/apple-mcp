@@ -2,6 +2,7 @@ import { z } from "zod";
 import { recurrenceSchema } from "./recurrence.ts";
 
 const listNameField = z.string().describe("Name of the reminder list");
+
 const reminderIdField = z
   .string()
   .optional()
@@ -13,6 +14,7 @@ const dueDateField = z
   .describe(
     'Due date as YYYY-MM-DD (all-day) or YYYY-MM-DD HH:MM[:SS], e.g. "2026-06-10 09:00:00"',
   );
+
 const priorityField = z
   .number()
   .min(0)

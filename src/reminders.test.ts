@@ -7,6 +7,7 @@ const ID = "x-apple-reminder://80C37AE0-1557-46BA-8185-5123E469B9D8";
 describe("reminders.create", () => {
   test("uses all-day due dates for ISO date-only input", async () => {
     const { run, scripts } = recordingRun(`reminder id ${ID}`);
+
     await createReminders(run).create({
       listName: "Inbox",
       name: "Test reminder",
@@ -20,6 +21,7 @@ describe("reminders.create", () => {
 
   test("uses timed due dates when the input includes a time", async () => {
     const { run, scripts } = recordingRun(`reminder id ${ID}`);
+
     await createReminders(run).create({
       listName: "Inbox",
       name: "Test reminder",
@@ -33,6 +35,7 @@ describe("reminders.create", () => {
 
   test("allDay forces the all-day due date property", async () => {
     const { run, scripts } = recordingRun(`reminder id ${ID}`);
+
     await createReminders(run).create({
       listName: "Inbox",
       name: "Test reminder",
@@ -46,6 +49,7 @@ describe("reminders.create", () => {
 
   test("escapes list, title, and notes", async () => {
     const { run, scripts } = recordingRun(`reminder id ${ID}`);
+
     await createReminders(run).create({
       listName: 'Inbox "Main"',
       name: 'Pay \\ "Bill"',
@@ -59,10 +63,12 @@ describe("reminders.create", () => {
 
   test("returns the id from the make result", async () => {
     const { run } = recordingRun(`reminder id ${ID}`);
+
     const created = await createReminders(run).create({
       listName: "Inbox",
       name: "x",
     });
+
     expect(created).toEqual({ id: ID });
   });
 
@@ -70,15 +76,18 @@ describe("reminders.create", () => {
     const { run } = recordingRun(
       'reminder id "x-apple-reminder://ABC" of list id "L1" of application "Reminders"',
     );
+
     const created = await createReminders(run).create({
       listName: "Inbox",
       name: "x",
     });
+
     expect(created.id).toBe("x-apple-reminder://ABC");
   });
 
   test("throws when the result carries no id", async () => {
     const { run } = recordingRun("");
+
     await expect(
       createReminders(run).create({ listName: "Inbox", name: "x" }),
     ).rejects.toThrow("No reminder id");
@@ -88,6 +97,7 @@ describe("reminders.create", () => {
 describe("reminders.create with recurrence", () => {
   test("attaches the rule through EventKit after the AppleScript make", async () => {
     const { run, scripts, languages } = recordingRun(`reminder id ${ID}`);
+
     const created = await createReminders(run).create({
       listName: "Inbox",
       name: "Rent",
@@ -96,20 +106,24 @@ describe("reminders.create with recurrence", () => {
 
     expect(created).toEqual({ id: ID, recurrenceRule: "FREQ=MONTHLY;INTERVAL=1" });
     expect(languages).toEqual([undefined, "JavaScript"]);
+
     expect(scripts[1]).toContain(
       'calendarItemWithIdentifier("80C37AE0-1557-46BA-8185-5123E469B9D8")',
     );
+
     expect(scripts[1]).toContain("initRecurrenceWithFrequencyIntervalEnd(2, 1, $())");
   });
 
   test("ends by count or by until date", async () => {
     const { run, scripts } = recordingRun(`reminder id ${ID}`);
     const reminders = createReminders(run);
+
     await reminders.create({
       listName: "Inbox",
       name: "x",
       recurrence: { frequency: "weekly", interval: 2, count: 5 },
     });
+
     await reminders.create({
       listName: "Inbox",
       name: "x",
@@ -122,10 +136,12 @@ describe("reminders.create with recurrence", () => {
 
   test("reports the created id when the recurrence step fails", async () => {
     let calls = 0;
+
     const run = async () => {
       if (calls++ === 0) return `reminder id ${ID}`;
       throw new Error("AppleScript error: no access");
     };
+
     await expect(
       createReminders(run).create({
         listName: "Inbox",
@@ -137,6 +153,7 @@ describe("reminders.create with recurrence", () => {
 
   test("rejects invalid rules before creating anything", async () => {
     const { run, scripts } = recordingRun();
+
     await expect(
       createReminders(run).create({
         listName: "Inbox",
@@ -144,6 +161,7 @@ describe("reminders.create with recurrence", () => {
         recurrence: { frequency: "daily", interval: 1, count: 2, until: "2027-01-01" },
       }),
     ).rejects.toThrow("count or until, not both");
+
     expect(scripts).toEqual([]);
   });
 });
@@ -166,12 +184,14 @@ describe("reminders.list", () => {
     expect(scripts[0]).toContain(
       "set AppleScript's text item delimiters to {return & linefeed, return, linefeed}",
     );
+
     expect(scripts[0]).toContain('set AppleScript\'s text item delimiters to " / "');
     expect(scripts[0]).toContain('" | notes: " & (b as text)');
   });
 
   test("reads every reminder when completed ones are included", async () => {
     const { run, scripts } = recordingRun("");
+
     const lines = await createReminders(run).list({
       listName: "Inbox",
       includeCompleted: true,
@@ -192,15 +212,18 @@ describe("reminders.search", () => {
 
     expect(lines).toEqual(["Inbox: a | id: x"]);
     expect(scripts[0]).toContain("repeat with l in every list");
+
     expect(scripts[0]).toContain(
       'properties of (every reminder of l whose completed is false and name contains "Pay \\"bill\\"")',
     );
+
     expect(scripts[0]).toContain('set line_ to (name of l) & ": " & name of r');
     expect(scripts[0]).toContain('" | id: " & id of r');
   });
 
   test("returns names only when completed reminders are included", async () => {
     const { run, scripts } = recordingRun("a\nb");
+
     const lines = await createReminders(run).search({
       query: "a",
       includeCompleted: true,
@@ -215,6 +238,7 @@ describe("reminders.search", () => {
 describe("reminders.update", () => {
   test("sets only the given fields on the matched reminder", async () => {
     const { run, scripts } = recordingRun();
+
     await createReminders(run).update({
       listName: "Inbox",
       id: "x-apple-reminder://ABC",
@@ -234,15 +258,18 @@ describe("reminders.update", () => {
   test("date-only due dates become all-day", async () => {
     const { run, scripts } = recordingRun();
     await createReminders(run).update({ listName: "Inbox", name: "a", dueDate: "2026-12-12" });
+
     expect(scripts[0]).toContain("set day of theDueDate to 12");
     expect(scripts[0]).toContain("set allday due date to theDueDate");
   });
 
   test("rejects an empty update before running anything", async () => {
     const { run, scripts } = recordingRun();
+
     await expect(
       createReminders(run).update({ listName: "Inbox", name: "a" }),
     ).rejects.toThrow("Nothing to update");
+
     expect(scripts).toEqual([]);
   });
 });
@@ -260,9 +287,11 @@ describe("reminders.complete and delete", () => {
 
   test("reject neither or both of name and id", async () => {
     const reminders = createReminders(recordingRun().run);
+
     await expect(reminders.complete({ listName: "Inbox" })).rejects.toThrow(
       "exactly one",
     );
+
     await expect(
       reminders.delete({ listName: "Inbox", name: "a", id: "b" }),
     ).rejects.toThrow("exactly one");
