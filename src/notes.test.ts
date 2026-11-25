@@ -41,7 +41,7 @@ describe("notes", () => {
     const { run, scripts } = recordingRun();
     await createNotes(run).edit({ name: "Plan", title: "New" });
 
-    expect(scripts[0]).toContain('set name of n to "New"');
+    expect(scripts[0]).toContain('set name of targetNote to "New"');
     expect(scripts[0]).not.toContain("set body of n");
   });
 

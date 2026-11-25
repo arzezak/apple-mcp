@@ -18,13 +18,13 @@ export function runAppleScript(
       "osascript",
       ["-l", language, "-e", script],
       { timeout: timeoutMs },
-      (err, stdout, stderr) => {
-        if (err) {
-          const msg = err.killed
+      (error, stdout, stderr) => {
+        if (error) {
+          const message = error.killed
             ? `timed out after ${timeoutMs / 1000}s`
-            : stderr?.trim() || err.message;
+            : stderr?.trim() || error.message;
 
-          reject(new Error(`AppleScript error: ${msg}`));
+          reject(new Error(`AppleScript error: ${message}`));
           return;
         }
 
@@ -86,7 +86,7 @@ export function parseList(raw: string): string[] {
 
   return raw
     .split("\n")
-    .map((s) => s.trim())
+    .map((line) => line.trim())
     .filter(Boolean);
 }
 
@@ -155,10 +155,10 @@ export function hasTimeComponent(input: string): boolean {
   return TIME_COMPONENT_RE.test(input);
 }
 
-export function quoted(s: string): string {
-  return `"${esc(s)}"`;
+export function quoted(text: string): string {
+  return `"${escaped(text)}"`;
 }
 
-function esc(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+function escaped(text: string): string {
+  return text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

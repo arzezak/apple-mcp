@@ -25,12 +25,12 @@ function notesListScript(folder?: string): string {
   return `
 tell application "Notes"
   set outputLines to {}
-  repeat with f in ${scopeExpression("folder", folder)}
-    set folderName to name of f
-    set nameList to name of every note of f
-    set dateList to modification date of every note of f
-    repeat with i from 1 to count of nameList
-      set end of outputLines to (item i of nameList & " | folder: " & folderName & " | modified: " & (item i of dateList as text))
+  repeat with currentFolder in ${scopeExpression("folder", folder)}
+    set folderName to name of currentFolder
+    set nameList to name of every note of currentFolder
+    set dateList to modification date of every note of currentFolder
+    repeat with noteIndex from 1 to count of nameList
+      set end of outputLines to (item noteIndex of nameList & " | folder: " & folderName & " | modified: " & (item noteIndex of dateList as text))
     end repeat
   end repeat
   ${joinLinefeedScript("outputLines")}
@@ -57,10 +57,10 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
     },
 
     read({ name, html = true }) {
-      const prop = html ? "body" : "plaintext";
+      const property = html ? "body" : "plaintext";
 
       return run(
-        `tell application "Notes" to ${prop} of first note whose name is ${quoted(name)}`,
+        `tell application "Notes" to ${property} of first note whose name is ${quoted(name)}`,
       );
     },
 
@@ -108,13 +108,13 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
 
       const lines = [
         `tell application "Notes"`,
-        `  set n to first note whose name is ${quoted(name)}`,
+        `  set targetNote to first note whose name is ${quoted(name)}`,
       ];
 
       if (body !== undefined)
-        lines.push(`  set body of n to ${quoted(markdownToHtml(body))}`);
+        lines.push(`  set body of targetNote to ${quoted(markdownToHtml(body))}`);
 
-      if (title !== undefined) lines.push(`  set name of n to ${quoted(title)}`);
+      if (title !== undefined) lines.push(`  set name of targetNote to ${quoted(title)}`);
       lines.push("end tell");
       await run(lines.join("\n"));
     },

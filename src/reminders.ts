@@ -43,27 +43,27 @@ function reminderLineStatements(
   read: (property: ReminderProperty) => string,
   prefix = '"- "',
 ): string {
-  return `set line_ to ${prefix} & ${read("name")}
+  return `set outputLine to ${prefix} & ${read("name")}
     try
-      set d to ${read("due date")}
-      if d is missing value then set d to ${read("allday due date")}
-      if d is not missing value then set line_ to line_ & " | due: " & (d as text)
+      set dueValue to ${read("due date")}
+      if dueValue is missing value then set dueValue to ${read("allday due date")}
+      if dueValue is not missing value then set outputLine to outputLine & " | due: " & (dueValue as text)
     end try
     try
-      set p to ${read("priority")}
-      if p is not 0 then set line_ to line_ & " | priority: " & p
+      set priorityValue to ${read("priority")}
+      if priorityValue is not 0 then set outputLine to outputLine & " | priority: " & priorityValue
     end try
     try
-      set b to ${read("body")}
-      if b is not missing value and b is not "" then
+      set noteText to ${read("body")}
+      if noteText is not missing value and noteText is not "" then
         set AppleScript's text item delimiters to {return & linefeed, return, linefeed}
-        set b to text items of b
+        set noteLines to text items of noteText
         set AppleScript's text item delimiters to " / "
-        set line_ to line_ & " | notes: " & (b as text)
+        set outputLine to outputLine & " | notes: " & (noteLines as text)
       end if
     end try
-    set line_ to line_ & " | id: " & ${read("id")}
-    set end of outputLines to line_`;
+    set outputLine to outputLine & " | id: " & ${read("id")}
+    set end of outputLines to outputLine`;
 }
 
 // Fastest measured shape when filtering: per-property fetches would
@@ -81,14 +81,14 @@ function incompleteRemindersScript({
   const filter =
     "completed is false" + (query ? ` and name contains ${quoted(query)}` : "");
 
-  const prefix = listName ? '"- "' : '(name of l) & ": "';
+  const prefix = listName ? '"- "' : '(name of currentList) & ": "';
 
   return `tell application "Reminders"
   set outputLines to {}
-  repeat with l in ${scopeExpression("list", listName)}
-    set recordList to properties of (every reminder of l whose ${filter})
-    repeat with r in recordList
-      ${reminderLineStatements((property) => `${property} of r`, prefix)}
+  repeat with currentList in ${scopeExpression("list", listName)}
+    set recordList to properties of (every reminder of currentList whose ${filter})
+    repeat with reminderRecord in recordList
+      ${reminderLineStatements((property) => `${property} of reminderRecord`, prefix)}
     end repeat
   end repeat
   ${joinLinefeedScript("outputLines")}
@@ -108,8 +108,8 @@ function allRemindersScript(listName: string): string {
     set idList to id of every reminder
   end tell
   set outputLines to {}
-  repeat with i from 1 to count of nameList
-    ${reminderLineStatements((property) => `item i of ${PROPERTY_LIST_VARS[property]}`)}
+  repeat with reminderIndex from 1 to count of nameList
+    ${reminderLineStatements((property) => `item reminderIndex of ${PROPERTY_LIST_VARS[property]}`)}
   end repeat
   ${joinLinefeedScript("outputLines")}
 end tell`;
@@ -123,12 +123,12 @@ function reminderCreateScript({
   allDay,
   priority,
 }: Omit<CreateReminderInput, "recurrence">): string {
-  const props: string[] = [`name:${quoted(name)}`];
-  if (notes) props.push(`body:${quoted(notes)}`);
-  if (dueDate) props.push(`${dueDateProperty(dueDate, allDay)}:theDueDate`);
-  if (priority !== undefined) props.push(`priority:${priority}`);
+  const properties: string[] = [`name:${quoted(name)}`];
+  if (notes) properties.push(`body:${quoted(notes)}`);
+  if (dueDate) properties.push(`${dueDateProperty(dueDate, allDay)}:theDueDate`);
+  if (priority !== undefined) properties.push(`priority:${priority}`);
 
-  return `${dueDateSetup(dueDate)}tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${props.join(", ")}}`;
+  return `${dueDateSetup(dueDate)}tell application "Reminders" to tell list ${quoted(listName)} to make new reminder with properties {${properties.join(", ")}}`;
 }
 
 function dueDateProperty(dueDate: string, allDay?: boolean): string {

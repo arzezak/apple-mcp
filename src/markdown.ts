@@ -7,13 +7,13 @@ export function markdownToHtml(text: string): string {
 
   const lines = text.split("\n");
   const output: string[] = [];
-  let i = 0;
+  let lineIndex = 0;
 
-  while (i < lines.length) {
-    i =
-      consumeFencedCodeBlock(lines, i, output) ??
-      consumeListBlock(lines, i, output) ??
-      consumeSingleLine(lines, i, output);
+  while (lineIndex < lines.length) {
+    lineIndex =
+      consumeFencedCodeBlock(lines, lineIndex, output) ??
+      consumeListBlock(lines, lineIndex, output) ??
+      consumeSingleLine(lines, lineIndex, output);
   }
 
   return output.join("\n");
@@ -45,22 +45,22 @@ function convertInlineFormatting(line: string): string {
 
 function consumeFencedCodeBlock(
   lines: string[],
-  i: number,
+  lineIndex: number,
   output: string[],
 ): number | null {
-  if (!lines[i].startsWith("```")) return null;
-  i++;
+  if (!lines[lineIndex].startsWith("```")) return null;
+  lineIndex++;
 
-  while (i < lines.length && !lines[i].startsWith("```")) {
+  while (lineIndex < lines.length && !lines[lineIndex].startsWith("```")) {
     output.push(
-      `<div><font face="Courier"><tt>${escapeHtml(lines[i])}</tt></font></div>`,
+      `<div><font face="Courier"><tt>${escapeHtml(lines[lineIndex])}</tt></font></div>`,
     );
 
-    i++;
+    lineIndex++;
   }
 
-  if (i < lines.length) i++;
-  return i;
+  if (lineIndex < lines.length) lineIndex++;
+  return lineIndex;
 }
 
 function escapeHtml(text: string): string {
@@ -77,29 +77,29 @@ const LIST_KINDS = [
 
 function consumeListBlock(
   lines: string[],
-  i: number,
+  lineIndex: number,
   output: string[],
 ): number | null {
-  const kind = LIST_KINDS.find((k) => k.marker.test(lines[i]));
+  const kind = LIST_KINDS.find((candidate) => candidate.marker.test(lines[lineIndex]));
   if (!kind) return null;
   output.push(`<${kind.tag}>`);
 
-  while (i < lines.length && kind.marker.test(lines[i])) {
-    const content = lines[i].replace(kind.marker, "");
+  while (lineIndex < lines.length && kind.marker.test(lines[lineIndex])) {
+    const content = lines[lineIndex].replace(kind.marker, "");
     output.push(`<li>${convertInlineFormatting(content)}</li>`);
-    i++;
+    lineIndex++;
   }
 
   output.push(`</${kind.tag}>`);
-  return i;
+  return lineIndex;
 }
 
 function consumeSingleLine(
   lines: string[],
-  i: number,
+  lineIndex: number,
   output: string[],
 ): number {
-  const line = lines[i];
+  const line = lines[lineIndex];
   const heading = line.match(/^(#{1,3})\s+(.+)/);
 
   if (heading) {
@@ -111,5 +111,5 @@ function consumeSingleLine(
     output.push(`<div>${convertInlineFormatting(line)}</div>`);
   }
 
-  return i + 1;
+  return lineIndex + 1;
 }

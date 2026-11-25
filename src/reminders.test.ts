@@ -172,9 +172,9 @@ describe("reminders.list", () => {
     const lines = await createReminders(run).list({ listName: "Inbox" });
 
     expect(lines).toEqual(["- a", "- b"]);
-    expect(scripts[0]).toContain('repeat with l in {list "Inbox"}');
+    expect(scripts[0]).toContain('repeat with currentList in {list "Inbox"}');
     expect(scripts[0]).toContain("whose completed is false");
-    expect(scripts[0]).toContain('" | id: " & id of r');
+    expect(scripts[0]).toContain('" | id: " & id of reminderRecord');
   });
 
   test("joins multi-line notes with a separator so each reminder stays on one line", async () => {
@@ -186,7 +186,7 @@ describe("reminders.list", () => {
     );
 
     expect(scripts[0]).toContain('set AppleScript\'s text item delimiters to " / "');
-    expect(scripts[0]).toContain('" | notes: " & (b as text)');
+    expect(scripts[0]).toContain('" | notes: " & (noteLines as text)');
   });
 
   test("reads every reminder when completed ones are included", async () => {
@@ -200,7 +200,7 @@ describe("reminders.list", () => {
     expect(lines).toEqual([]);
     expect(scripts[0]).toContain("name of every reminder");
     expect(scripts[0]).toContain("set idList to id of every reminder");
-    expect(scripts[0]).toContain('" | id: " & item i of idList');
+    expect(scripts[0]).toContain('" | id: " & item reminderIndex of idList');
     expect(scripts[0]).not.toContain("whose completed");
   });
 });
@@ -211,14 +211,14 @@ describe("reminders.search", () => {
     const lines = await createReminders(run).search({ query: 'Pay "bill"' });
 
     expect(lines).toEqual(["Inbox: a | id: x"]);
-    expect(scripts[0]).toContain("repeat with l in every list");
+    expect(scripts[0]).toContain("repeat with currentList in every list");
 
     expect(scripts[0]).toContain(
-      'properties of (every reminder of l whose completed is false and name contains "Pay \\"bill\\"")',
+      'properties of (every reminder of currentList whose completed is false and name contains "Pay \\"bill\\"")',
     );
 
-    expect(scripts[0]).toContain('set line_ to (name of l) & ": " & name of r');
-    expect(scripts[0]).toContain('" | id: " & id of r');
+    expect(scripts[0]).toContain('set outputLine to (name of currentList) & ": " & name of reminderRecord');
+    expect(scripts[0]).toContain('" | id: " & id of reminderRecord');
   });
 
   test("returns names only when completed reminders are included", async () => {

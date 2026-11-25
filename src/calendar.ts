@@ -56,11 +56,11 @@ function calendarCreateEventScript({
   allDay = false,
   recurrenceRule,
 }: Omit<CreateEventInput, "recurrence"> & { recurrenceRule?: string }): string {
-  const props: string[] = [`summary:${quoted(title)}`];
-  if (location) props.push(`location:${quoted(location)}`);
-  if (notes) props.push(`description:${quoted(notes)}`);
-  if (allDay) props.push("allday event:true");
-  if (recurrenceRule) props.push(`recurrence:${quoted(recurrenceRule)}`);
+  const properties: string[] = [`summary:${quoted(title)}`];
+  if (location) properties.push(`location:${quoted(location)}`);
+  if (notes) properties.push(`description:${quoted(notes)}`);
+  if (allDay) properties.push("allday event:true");
+  if (recurrenceRule) properties.push(`recurrence:${quoted(recurrenceRule)}`);
 
   const dateSetup = allDay
     ? `${setTimeOfDay("theStart")}
@@ -78,7 +78,7 @@ ${startSetup}
 ${dateSetup}
 tell application "Calendar"
   tell calendar ${quoted(calendar)}
-    set createdEvent to make new event with properties {start date:theStart, end date:theEnd, ${props.join(", ")}}
+    set createdEvent to make new event with properties {start date:theStart, end date:theEnd, ${properties.join(", ")}}
     return uid of createdEvent
   end tell
 end tell`;

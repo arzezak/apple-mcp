@@ -82,9 +82,9 @@ function dateStamp(variable: string): string {
 async function readReminder(id: string) {
   const raw = await runAppleScript(
     `tell application "Reminders" to tell list ${quoted(TEST_CONTAINER_NAME)}
-  set r to first reminder whose id is ${quoted(id)}
-  set d to due date of r
-  return (name of r) & linefeed & (body of r) & linefeed & ((priority of r) as text) & linefeed & ${dateStamp("d")}
+  set targetReminder to first reminder whose id is ${quoted(id)}
+  set dueValue to due date of targetReminder
+  return (name of targetReminder) & linefeed & (body of targetReminder) & linefeed & ((priority of targetReminder) as text) & linefeed & ${dateStamp("dueValue")}
 end tell`,
     60_000,
   );
@@ -134,10 +134,10 @@ JSON.stringify({
 async function readEvent(id: string) {
   const raw = await runAppleScript(
     `tell application "Calendar" to tell calendar ${quoted(TEST_CONTAINER_NAME)}
-  set e to event id ${quoted(id)}
-  set s to start date of e
-  set f to end date of e
-  return (summary of e) & linefeed & (location of e) & linefeed & (description of e) & linefeed & ((allday event of e) as text) & linefeed & ${dateStamp("s")} & linefeed & ${dateStamp("f")}
+  set targetEvent to event id ${quoted(id)}
+  set startValue to start date of targetEvent
+  set endValue to end date of targetEvent
+  return (summary of targetEvent) & linefeed & (location of targetEvent) & linefeed & (description of targetEvent) & linefeed & ((allday event of targetEvent) as text) & linefeed & ${dateStamp("startValue")} & linefeed & ${dateStamp("endValue")}
 end tell`,
     60_000,
   );
