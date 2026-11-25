@@ -4,7 +4,6 @@ import {
   runAppleScript,
   runNameList,
   matchLabel,
-  parseList,
   quoted,
   appleScriptDateStatements,
   SLOW_QUERY_TIMEOUT_MS,
@@ -12,6 +11,7 @@ import {
 } from "./osascript.ts";
 import { jsonResult, linesResult, textResult } from "./results.ts";
 import { recurrenceSchema, recurrenceRule, type Recurrence } from "./recurrence.ts";
+import { eventKitEvents, type EventRecord, type ReadEvents } from "./eventkit.ts";
 
 function setTimeOfDay(varName: string, hour = 0, minute = 0): string {
   return `set hours of ${varName} to ${hour}
@@ -19,70 +19,24 @@ set minutes of ${varName} to ${minute}
 set seconds of ${varName} to 0`;
 }
 
-// EventKit, not AppleScript: a whose filter reads every event of a calendar
-// (176s across eleven calendars against 0.13s, 2026-11-25).
-// calendarItemIdentifier is the uid that AppleScript's `event id` takes.
-function eventRangeScript(
-  calendar: string | undefined,
-  daysBack: number,
-  daysAhead: number,
-  query?: string,
-): string {
-  return `ObjC.import("EventKit");
-const calendarName = ${JSON.stringify(calendar ?? null)};
-const query = ${JSON.stringify(query?.toLowerCase() ?? null)};
-const daysBack = ${daysBack};
-const daysAhead = ${daysAhead};
-const store = $.EKEventStore.alloc.init;
-const status = () => Number($.EKEventStore.authorizationStatusForEntityType(0));
+const eventDateFormat = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "full",
+  timeStyle: "medium",
+});
 
-if (status() === 0) {
-  store.requestFullAccessToEventsWithCompletion(() => {});
-  const deadline = Date.now() + 45000;
-
-  while (status() === 0 && Date.now() < deadline)
-    $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
+function singleLine(text: string): string {
+  return text
+    .split(/\s*[\r\n]+\s*/)
+    .filter(Boolean)
+    .join(" / ");
 }
 
-if (status() !== 3)
-  throw new Error("osascript has no full Calendar access. Allow it under System Settings > Privacy & Security > Calendars.");
+function eventLine(event: EventRecord, withCalendar: boolean): string {
+  const prefix = withCalendar ? `${event.calendar}: ` : "";
+  const location = singleLine(event.location);
+  const place = location ? ` @ ${location}` : "";
 
-let calendars = $();
-
-if (calendarName !== null) {
-  const namedCalendars = ObjC.unwrap(store.calendarsForEntityType(0)).filter(
-    (candidate) => ObjC.unwrap(candidate.title) === calendarName,
-  );
-
-  if (namedCalendars.length === 0) throw new Error("No calendar named " + calendarName + ".");
-
-  calendars = $(namedCalendars);
-}
-
-const today = new Date();
-const rangeStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysBack);
-const rangeEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysAhead, 0, 0, -1);
-const dateFormat = new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "medium" });
-const startOf = (event) => ObjC.unwrap(event.startDate);
-const singleLine = (text) => (ObjC.unwrap(text) || "").split(/\\s*[\\r\\n]+\\s*/).filter(Boolean).join(" / ");
-const titleOf = (event) => singleLine(event.title);
-const predicate = store.predicateForEventsWithStartDateEndDateCalendars(rangeStart, rangeEnd, calendars);
-const events = ObjC.unwrap(store.eventsMatchingPredicate(predicate)) || [];
-
-events
-  .filter((event) => startOf(event) >= rangeStart)
-  .filter((event) => query === null || titleOf(event).toLowerCase().includes(query))
-  .sort((first, second) => startOf(first) - startOf(second))
-  .map((event) => {
-    const prefix = calendarName === null ? ObjC.unwrap(event.calendar.title) + ": " : "";
-    const location = singleLine(event.location);
-    let line = prefix + titleOf(event) + " | " + dateFormat.format(startOf(event)) + " → " + dateFormat.format(ObjC.unwrap(event.endDate));
-
-    if (location) line += " @ " + location;
-
-    return line + " | id: " + ObjC.unwrap(event.calendarItemIdentifier);
-  })
-  .join("\\n");`;
+  return `${prefix}${singleLine(event.title)} | ${eventDateFormat.format(event.start)} → ${eventDateFormat.format(event.end)}${place} | id: ${event.id}`;
 }
 
 type CreateEventInput = {
@@ -253,29 +207,42 @@ export type Calendar = {
   deleteEvent(match: EventMatch): Promise<void>;
 };
 
-export function createCalendar(run: RunScript = runAppleScript): Calendar {
+export function createCalendar(
+  run: RunScript = runAppleScript,
+  readEvents: ReadEvents = eventKitEvents(run),
+  now: () => Date = () => new Date(),
+): Calendar {
+  async function eventLines(
+    calendar: string | undefined,
+    daysBack: number,
+    daysAhead: number,
+    query?: string,
+  ): Promise<string[]> {
+    const today = now();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysBack);
+    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysAhead, 0, 0, -1);
+    const loweredQuery = query?.toLowerCase();
+    const events = await readEvents({ calendar, start, end });
+
+    return events
+      .filter((event) => event.start >= start)
+      .filter(
+        (event) =>
+          loweredQuery === undefined ||
+          singleLine(event.title).toLowerCase().includes(loweredQuery),
+      )
+      .sort((first, second) => first.start.getTime() - second.start.getTime())
+      .map((event) => eventLine(event, calendar === undefined));
+  }
+
   return {
     listCalendars: () => runNameList(run, "Calendar", "name of every calendar"),
 
-    async listEvents({ calendar, daysAhead = 1, daysBack = 0 }) {
-      return parseList(
-        await run(
-          eventRangeScript(calendar, daysBack, daysAhead),
-          SLOW_QUERY_TIMEOUT_MS,
-          "JavaScript",
-        ),
-      );
-    },
+    listEvents: ({ calendar, daysAhead = 1, daysBack = 0 }) =>
+      eventLines(calendar, daysBack, daysAhead),
 
-    async searchEvents({ query, calendar, daysAhead = 30 }) {
-      return parseList(
-        await run(
-          eventRangeScript(calendar, 0, daysAhead, query),
-          SLOW_QUERY_TIMEOUT_MS,
-          "JavaScript",
-        ),
-      );
-    },
+    searchEvents: ({ query, calendar, daysAhead = 30 }) =>
+      eventLines(calendar, 0, daysAhead, query),
 
     async createEvent({ recurrence, ...input }) {
       const rule = recurrence && recurrenceRule(recurrence);

@@ -23,6 +23,7 @@ import {
   recurrenceUntilDate,
   type Recurrence,
 } from "./recurrence.ts";
+import { eventStoreStatements } from "./eventkit.ts";
 
 const PROPERTY_LIST_VARS = {
   name: "nameList",
@@ -169,8 +170,7 @@ const EK_FREQUENCY = { daily: 0, weekly: 1, monthly: 2, yearly: 3 } as const;
 
 // Reminders' AppleScript dictionary has no recurrence, so the rule is attached
 // through EventKit (JXA). The UUID in the AppleScript id is the EventKit
-// calendarItemIdentifier (checked 2026-11-05). The bridge returns the
-// authorization status as a string, hence Number().
+// calendarItemIdentifier (checked 2026-11-05).
 function reminderRecurrenceScript(id: string, recurrence: Recurrence): string {
   const uuid = id.replace(/^x-apple-reminder:\/\//, "");
   const end =
@@ -179,17 +179,7 @@ function reminderRecurrenceScript(id: string, recurrence: Recurrence): string {
       : recurrence.until !== undefined
         ? `$.EKRecurrenceEnd.recurrenceEndWithEndDate($.NSDate.dateWithTimeIntervalSince1970(${recurrenceUntilDate(recurrence.until).getTime() / 1000}))`
         : "$()";
-  return `ObjC.import("EventKit");
-const store = $.EKEventStore.alloc.init;
-const status = () => Number($.EKEventStore.authorizationStatusForEntityType(1));
-if (status() === 0) {
-  store.requestFullAccessToRemindersWithCompletion(() => {});
-  const deadline = Date.now() + 60000;
-  while (status() === 0 && Date.now() < deadline)
-    $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
-}
-if (status() !== 3)
-  throw new Error("osascript has no Reminders access. Allow it under System Settings > Privacy & Security > Reminders.");
+  return `${eventStoreStatements("reminders")}
 const item = store.calendarItemWithIdentifier(${JSON.stringify(uuid)});
 if (item.isNil()) throw new Error(${JSON.stringify(`No reminder with id ${id}.`)});
 item.addRecurrenceRule($.EKRecurrenceRule.alloc.initRecurrenceWithFrequencyIntervalEnd(${EK_FREQUENCY[recurrence.frequency]}, ${recurrence.interval}, ${end}));

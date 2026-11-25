@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createCalendar } from "./calendar.ts";
 import { recordingRun } from "./testing.ts";
+import type { EventRange, EventRecord } from "./eventkit.ts";
 
 async function createScript(
   input: Parameters<ReturnType<typeof createCalendar>["createEvent"]>[0],
@@ -11,69 +12,116 @@ async function createScript(
 }
 
 describe("calendar.listEvents and searchEvents", () => {
-  test("queries EventKit through JXA instead of scanning with AppleScript", async () => {
-    const { run, scripts, languages } = recordingRun();
-    await createCalendar(run).listEvents({ calendar: "Work" });
+  const NOW = new Date(2026, 10, 25, 15, 30);
 
-    expect(languages).toEqual(["JavaScript"]);
-    expect(scripts[0]).toContain('ObjC.import("EventKit")');
-    expect(scripts[0]).toContain("store.eventsMatchingPredicate(");
-    expect(scripts[0]).not.toContain("whose");
+  function eventRecord(overrides: Partial<EventRecord> = {}): EventRecord {
+    return {
+      calendar: "Work",
+      title: "Standup",
+      start: new Date(2026, 10, 25, 9, 0),
+      end: new Date(2026, 10, 25, 9, 30),
+      location: "",
+      id: "UID-1",
+      ...overrides,
+    };
+  }
+
+  function calendarWith(events: EventRecord[]) {
+    const ranges: EventRange[] = [];
+
+    const calendar = createCalendar(
+      recordingRun().run,
+      async (range) => {
+        ranges.push(range);
+        return events;
+      },
+      () => NOW,
+    );
+
+    return { calendar, ranges };
+  }
+
+  test("formats one line per event, ending with its id", async () => {
+    const { calendar } = calendarWith([eventRecord({ location: "Room 3" })]);
+
+    const lines = await calendar.listEvents({ calendar: "Work" });
+
+    expect(lines).toEqual([
+      "Standup | Wednesday, November 25, 2026 at 9:00:00 AM → Wednesday, November 25, 2026 at 9:30:00 AM @ Room 3 | id: UID-1",
+    ]);
   });
 
-  test("ends each line with the id the AppleScript event specifier accepts", async () => {
-    const { run, scripts } = recordingRun();
-    await createCalendar(run).listEvents({ calendar: "Work" });
+  test("leaves out the location when the event has none", async () => {
+    const { calendar } = calendarWith([eventRecord()]);
 
-    expect(scripts[0]).toContain('" | id: " + ObjC.unwrap(event.calendarItemIdentifier)');
-    expect(scripts[0]).toContain('if (location) line += " @ " + location;');
+    const lines = await calendar.listEvents({ calendar: "Work" });
+
+    expect(lines[0]).toContain("9:30:00 AM | id: UID-1");
   });
 
   test("joins a multi-line title or location so each event stays on one line", async () => {
-    const { run, scripts } = recordingRun();
-    await createCalendar(run).listEvents({ calendar: "Work" });
+    const { calendar } = calendarWith([
+      eventRecord({ title: "Lunch\nwith Sam", location: "Cabildo 1234\r\n  CABA" }),
+    ]);
 
-    expect(scripts[0]).toContain('.join(" / ")');
-    expect(scripts[0]).toContain("const location = singleLine(event.location);");
-    expect(scripts[0]).toContain("singleLine(event.title)");
+    const lines = await calendar.listEvents({ calendar: "Work" });
+
+    expect(lines[0]).toStartWith("Lunch / with Sam | ");
+    expect(lines[0]).toContain(" @ Cabildo 1234 / CABA | id: ");
   });
 
-  test("defaults to today and prefixes calendar names when unscoped", async () => {
-    const { run, scripts } = recordingRun("Work: a\nHome: b");
-    const lines = await createCalendar(run).listEvents({});
+  test("reads today by default and prefixes calendar names when unscoped", async () => {
+    const { calendar, ranges } = calendarWith([eventRecord({ calendar: "Home" })]);
 
-    expect(lines).toEqual(["Work: a", "Home: b"]);
-    expect(scripts[0]).toContain("const daysBack = 0;");
-    expect(scripts[0]).toContain("const daysAhead = 1;");
-    expect(scripts[0]).toContain("const calendarName = null;");
-    expect(scripts[0]).toContain('ObjC.unwrap(event.calendar.title) + ": "');
+    const lines = await calendar.listEvents({});
+
+    expect(ranges).toEqual([
+      {
+        calendar: undefined,
+        start: new Date(2026, 10, 25),
+        end: new Date(2026, 10, 25, 23, 59, 59),
+      },
+    ]);
+    expect(lines[0]).toStartWith("Home: Standup | ");
   });
 
-  test("scopes to the named calendar and reports a missing one", async () => {
-    const { run, scripts } = recordingRun();
-    await createCalendar(run).listEvents({ calendar: 'Work "Office"', daysBack: 7 });
+  test("reads the named calendar over the days back and ahead", async () => {
+    const { calendar, ranges } = calendarWith([]);
 
-    expect(scripts[0]).toContain('const calendarName = "Work \\"Office\\"";');
-    expect(scripts[0]).toContain("const daysBack = 7;");
-    expect(scripts[0]).toContain('throw new Error("No calendar named " + calendarName + ".")');
+    await calendar.listEvents({ calendar: "Work", daysBack: 7, daysAhead: 3 });
+
+    expect(ranges).toEqual([
+      {
+        calendar: "Work",
+        start: new Date(2026, 10, 18),
+        end: new Date(2026, 10, 27, 23, 59, 59),
+      },
+    ]);
+  });
+
+  test("sorts by start and drops events that began before the range", async () => {
+    const { calendar } = calendarWith([
+      eventRecord({ title: "Later", start: new Date(2026, 10, 25, 17, 0) }),
+      eventRecord({ title: "Began yesterday", start: new Date(2026, 10, 24, 22, 0) }),
+      eventRecord({ title: "Earlier", start: new Date(2026, 10, 25, 8, 0) }),
+    ]);
+
+    const lines = await calendar.listEvents({ calendar: "Work" });
+
+    expect(lines.map((line) => line.split(" | ")[0])).toEqual(["Earlier", "Later"]);
   });
 
   test("search filters by title over 30 days by default, ignoring case", async () => {
-    const { run, scripts } = recordingRun();
-    await createCalendar(run).searchEvents({ query: 'Stand "UP"', calendar: "Work" });
+    const { calendar, ranges } = calendarWith([
+      eventRecord({ title: 'Daily stand "up"' }),
+      eventRecord({ title: "Retro" }),
+    ]);
 
-    expect(scripts[0]).toContain('const query = "stand \\"up\\"";');
-    expect(scripts[0]).toContain("const daysAhead = 30;");
-    expect(scripts[0]).toContain('const calendarName = "Work";');
-  });
+    const lines = await calendar.searchEvents({ query: 'Stand "UP"', calendar: "Work" });
 
-  test("asks for full access only when it was never decided", async () => {
-    const { run, scripts } = recordingRun();
-    await createCalendar(run).listEvents({});
-
-    expect(scripts[0]).toContain("if (status() === 0) {");
-    expect(scripts[0]).toContain("store.requestFullAccessToEventsWithCompletion(");
-    expect(scripts[0]).toContain("if (status() !== 3)");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toStartWith('Daily stand "up" | ');
+    expect(ranges[0]!.end).toEqual(new Date(2026, 11, 24, 23, 59, 59));
   });
 });
 
