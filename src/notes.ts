@@ -68,16 +68,25 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
       );
     },
 
-    search({ query, searchContent = false, folder }) {
-      const field = searchContent ? "plaintext" : "name";
+    // Title matches are filtered here: `whose name contains` took 4.3-5.1s
+    // on 310 notes against 0.19s for every name (2026-11-25).
+    async search({ query, searchContent = false, folder }) {
       const scope = folder
         ? `every note in folder ${quoted(folder)}`
         : "every note";
-      return runNameList(
-        run,
-        "Notes",
-        `name of (${scope} whose ${field} contains ${quoted(query)})`,
-      );
+
+      if (searchContent) {
+        return runNameList(
+          run,
+          "Notes",
+          `name of (${scope} whose plaintext contains ${quoted(query)})`,
+        );
+      }
+
+      const loweredQuery = query.toLowerCase();
+      const names = await runNameList(run, "Notes", `name of ${scope}`);
+
+      return names.filter((name) => name.toLowerCase().includes(loweredQuery));
     },
 
     async move({ name, targetFolder }) {

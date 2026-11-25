@@ -57,4 +57,14 @@ describe("notes", () => {
     expect(names).toEqual(["Plan", "Notes, misc"]);
     expect(scripts[0]).toContain('every note in folder "Work" whose plaintext contains "x"');
   });
+
+  test("title search matches names itself, ignoring case, without a whose filter", async () => {
+    const { run, scripts } = recordingRun("Trip PLAN\nGroceries\nplanning");
+
+    const names = await createNotes(run).search({ query: "Plan", folder: "Work" });
+
+    expect(names).toEqual(["Trip PLAN", "planning"]);
+    expect(scripts[0]).toContain('name of every note in folder "Work"');
+    expect(scripts[0]).not.toContain("whose");
+  });
 });
