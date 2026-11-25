@@ -7,8 +7,6 @@ import {
   parseList,
   quoted,
   appleScriptDateLiteral,
-  joinLinefeedScript,
-  scopeExpression,
   SLOW_QUERY_TIMEOUT_MS,
   type RunScript,
 } from "./osascript.ts";
@@ -21,50 +19,70 @@ set minutes of ${varName} to ${minute}
 set seconds of ${varName} to 0`;
 }
 
-// "properties of" evaluates the expensive whose filter once per calendar;
-// per-property reads in the loop would pay one round trip per property per event.
-function eventQueryScript(
-  calendar: string | undefined,
-  dateSetup: string,
-  eventFilter: string,
-): string {
-  const includeCalendarName = !calendar;
-  const calNameSetup = includeCalendarName ? `set calName to name of cal\n    ` : "";
-  const linePrefix = includeCalendarName ? `calName & ": " & ` : "";
-
-  return `
-${dateSetup}
-
-tell application "Calendar"
-  set outputLines to {}
-  repeat with cal in ${scopeExpression("calendar", calendar)}
-    ${calNameSetup}set recordList to properties of (every event of cal ${eventFilter})
-    repeat with r in recordList
-      set eventLine to (${linePrefix}summary of r & " | " & (start date of r as text) & " → " & (end date of r as text))
-      set loc to location of r
-      if loc is not missing value and loc is not "" then set eventLine to eventLine & " @ " & loc
-      set eventLine to eventLine & " | id: " & uid of r
-      set end of outputLines to eventLine
-    end repeat
-  end repeat
-  ${joinLinefeedScript("outputLines")}
-end tell`;
-}
-
+// EventKit, not AppleScript: a whose filter reads every event of a calendar
+// (176s across eleven calendars against 0.13s, 2026-11-25).
+// calendarItemIdentifier is the uid that AppleScript's `event id` takes.
 function eventRangeScript(
   calendar: string | undefined,
   daysBack: number,
   daysAhead: number,
-  extraFilter?: string,
+  query?: string,
 ): string {
-  const dateSetup = `set theStart to current date
-${setTimeOfDay("theStart")}
-set theEnd to theStart + (${daysAhead} * days) - 1
-set theStart to theStart - (${daysBack} * days)`;
-  const filter =
-    "start date is greater than or equal to theStart and start date is less than or equal to theEnd" +
-    (extraFilter ? ` and ${extraFilter}` : "");
-  return eventQueryScript(calendar, dateSetup, `whose ${filter}`);
+  return `ObjC.import("EventKit");
+const calendarName = ${JSON.stringify(calendar ?? null)};
+const query = ${JSON.stringify(query?.toLowerCase() ?? null)};
+const daysBack = ${daysBack};
+const daysAhead = ${daysAhead};
+const store = $.EKEventStore.alloc.init;
+const status = () => Number($.EKEventStore.authorizationStatusForEntityType(0));
+
+if (status() === 0) {
+  store.requestFullAccessToEventsWithCompletion(() => {});
+  const deadline = Date.now() + 45000;
+
+  while (status() === 0 && Date.now() < deadline)
+    $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
+}
+
+if (status() !== 3)
+  throw new Error("osascript has no full Calendar access. Allow it under System Settings > Privacy & Security > Calendars.");
+
+let calendars = $();
+
+if (calendarName !== null) {
+  const namedCalendars = ObjC.unwrap(store.calendarsForEntityType(0)).filter(
+    (candidate) => ObjC.unwrap(candidate.title) === calendarName,
+  );
+
+  if (namedCalendars.length === 0) throw new Error("No calendar named " + calendarName + ".");
+
+  calendars = $(namedCalendars);
+}
+
+const today = new Date();
+const rangeStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysBack);
+const rangeEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysAhead, 0, 0, -1);
+const dateFormat = new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "medium" });
+const startOf = (event) => ObjC.unwrap(event.startDate);
+const singleLine = (text) => (ObjC.unwrap(text) || "").split(/\\s*[\\r\\n]+\\s*/).filter(Boolean).join(" / ");
+const titleOf = (event) => singleLine(event.title);
+const predicate = store.predicateForEventsWithStartDateEndDateCalendars(rangeStart, rangeEnd, calendars);
+const events = ObjC.unwrap(store.eventsMatchingPredicate(predicate)) || [];
+
+events
+  .filter((event) => startOf(event) >= rangeStart)
+  .filter((event) => query === null || titleOf(event).toLowerCase().includes(query))
+  .sort((first, second) => startOf(first) - startOf(second))
+  .map((event) => {
+    const prefix = calendarName === null ? ObjC.unwrap(event.calendar.title) + ": " : "";
+    const location = singleLine(event.location);
+    let line = prefix + titleOf(event) + " | " + dateFormat.format(startOf(event)) + " → " + dateFormat.format(ObjC.unwrap(event.endDate));
+
+    if (location) line += " @ " + location;
+
+    return line + " | id: " + ObjC.unwrap(event.calendarItemIdentifier);
+  })
+  .join("\\n");`;
 }
 
 type CreateEventInput = {
@@ -244,6 +262,7 @@ export function createCalendar(run: RunScript = runAppleScript): Calendar {
         await run(
           eventRangeScript(calendar, daysBack, daysAhead),
           SLOW_QUERY_TIMEOUT_MS,
+          "JavaScript",
         ),
       );
     },
@@ -251,8 +270,9 @@ export function createCalendar(run: RunScript = runAppleScript): Calendar {
     async searchEvents({ query, calendar, daysAhead = 30 }) {
       return parseList(
         await run(
-          eventRangeScript(calendar, 0, daysAhead, `summary contains ${quoted(query)}`),
+          eventRangeScript(calendar, 0, daysAhead, query),
           SLOW_QUERY_TIMEOUT_MS,
+          "JavaScript",
         ),
       );
     },

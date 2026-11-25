@@ -11,16 +11,31 @@ async function createScript(
 }
 
 describe("calendar.listEvents and searchEvents", () => {
-  test("appends the location only when the event has one", async () => {
+  test("queries EventKit through JXA instead of scanning with AppleScript", async () => {
+    const { run, scripts, languages } = recordingRun();
+    await createCalendar(run).listEvents({ calendar: "Work" });
+
+    expect(languages).toEqual(["JavaScript"]);
+    expect(scripts[0]).toContain('ObjC.import("EventKit")');
+    expect(scripts[0]).toContain("store.eventsMatchingPredicate(");
+    expect(scripts[0]).not.toContain("whose");
+  });
+
+  test("ends each line with the id the AppleScript event specifier accepts", async () => {
     const { run, scripts } = recordingRun();
     await createCalendar(run).listEvents({ calendar: "Work" });
 
-    expect(scripts[0]).toContain("set loc to location of r");
-    expect(scripts[0]).toContain(
-      'if loc is not missing value and loc is not "" then set eventLine to eventLine & " @ " & loc',
-    );
-    expect(scripts[0]).toContain('set eventLine to eventLine & " | id: " & uid of r');
-    expect(scripts[0]).toContain("set end of outputLines to eventLine");
+    expect(scripts[0]).toContain('" | id: " + ObjC.unwrap(event.calendarItemIdentifier)');
+    expect(scripts[0]).toContain('if (location) line += " @ " + location;');
+  });
+
+  test("joins a multi-line title or location so each event stays on one line", async () => {
+    const { run, scripts } = recordingRun();
+    await createCalendar(run).listEvents({ calendar: "Work" });
+
+    expect(scripts[0]).toContain('.join(" / ")');
+    expect(scripts[0]).toContain("const location = singleLine(event.location);");
+    expect(scripts[0]).toContain("singleLine(event.title)");
   });
 
   test("defaults to today and prefixes calendar names when unscoped", async () => {
@@ -28,18 +43,37 @@ describe("calendar.listEvents and searchEvents", () => {
     const lines = await createCalendar(run).listEvents({});
 
     expect(lines).toEqual(["Work: a", "Home: b"]);
-    expect(scripts[0]).toContain("theStart + (1 * days) - 1");
-    expect(scripts[0]).toContain("every calendar");
-    expect(scripts[0]).toContain("set calName to name of cal");
+    expect(scripts[0]).toContain("const daysBack = 0;");
+    expect(scripts[0]).toContain("const daysAhead = 1;");
+    expect(scripts[0]).toContain("const calendarName = null;");
+    expect(scripts[0]).toContain('ObjC.unwrap(event.calendar.title) + ": "');
   });
 
-  test("search filters by summary over 30 days by default", async () => {
+  test("scopes to the named calendar and reports a missing one", async () => {
     const { run, scripts } = recordingRun();
-    await createCalendar(run).searchEvents({ query: 'Stand "up"', calendar: "Work" });
+    await createCalendar(run).listEvents({ calendar: 'Work "Office"', daysBack: 7 });
 
-    expect(scripts[0]).toContain('summary contains "Stand \\"up\\""');
-    expect(scripts[0]).toContain("theStart + (30 * days) - 1");
-    expect(scripts[0]).toContain('{calendar "Work"}');
+    expect(scripts[0]).toContain('const calendarName = "Work \\"Office\\"";');
+    expect(scripts[0]).toContain("const daysBack = 7;");
+    expect(scripts[0]).toContain('throw new Error("No calendar named " + calendarName + ".")');
+  });
+
+  test("search filters by title over 30 days by default, ignoring case", async () => {
+    const { run, scripts } = recordingRun();
+    await createCalendar(run).searchEvents({ query: 'Stand "UP"', calendar: "Work" });
+
+    expect(scripts[0]).toContain('const query = "stand \\"up\\"";');
+    expect(scripts[0]).toContain("const daysAhead = 30;");
+    expect(scripts[0]).toContain('const calendarName = "Work";');
+  });
+
+  test("asks for full access only when it was never decided", async () => {
+    const { run, scripts } = recordingRun();
+    await createCalendar(run).listEvents({});
+
+    expect(scripts[0]).toContain("if (status() === 0) {");
+    expect(scripts[0]).toContain("store.requestFullAccessToEventsWithCompletion(");
+    expect(scripts[0]).toContain("if (status() !== 3)");
   });
 });
 
