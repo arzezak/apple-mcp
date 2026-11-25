@@ -35,8 +35,6 @@ export function recurrenceUntilDate(until: string): Date {
   return date;
 }
 
-// RRULE text, used by Calendar as the event's recurrence and by both apps
-// to describe the rule in confirmations.
 export function recurrenceRule(recurrence: Recurrence): string {
   if (!Number.isInteger(recurrence.interval) || recurrence.interval < 1) {
     throw new Error("Recurrence interval must be a positive integer.");
