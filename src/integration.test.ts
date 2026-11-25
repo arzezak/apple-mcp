@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { quoted, runAppleScript } from "./osascript.ts";
-import { registerCalendarTools } from "./calendar.ts";
-import { registerNotesTools } from "./notes.ts";
-import { registerRemindersTools } from "./reminders.ts";
+import { registerCalendarTools } from "./calendar.tools.ts";
+import { registerNotesTools } from "./notes.tools.ts";
+import { registerRemindersTools } from "./reminders.tools.ts";
 
 const describeIntegration =
   process.env.APPLE_MCP_INTEGRATION === "1" ? describe : describe.skip;

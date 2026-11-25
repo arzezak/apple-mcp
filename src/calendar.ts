@@ -1,17 +1,21 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import {
   runAppleScript,
   runNameList,
-  matchLabel,
   quoted,
   appleScriptDateStatements,
   SLOW_QUERY_TIMEOUT_MS,
   type RunScript,
 } from "./osascript.ts";
-import { jsonResult, linesResult, textResult } from "./results.ts";
-import { recurrenceSchema, recurrenceRule, type Recurrence } from "./recurrence.ts";
+import { recurrenceRule } from "./recurrence.ts";
 import { eventKitEvents, type EventRecord, type ReadEvents } from "./eventkit.ts";
+import type {
+  CreateEventInput,
+  EventChanges,
+  EventMatch,
+  ListEventsInput,
+  SearchEventsInput,
+  UpdateEventInput,
+} from "./calendar.inputs.ts";
 
 function setTimeOfDay(varName: string, hour = 0, minute = 0): string {
   return `set hours of ${varName} to ${hour}
@@ -39,19 +43,6 @@ function eventLine(event: EventRecord, withCalendar: boolean): string {
   return `${prefix}${singleLine(event.title)} | ${eventDateFormat.format(event.start)} → ${eventDateFormat.format(event.end)}${place} | id: ${event.id}`;
 }
 
-type CreateEventInput = {
-  calendar: string;
-  title: string;
-  startDate?: string;
-  daysFromNow?: number;
-  hour: number;
-  minute?: number;
-  durationMinutes?: number;
-  location?: string;
-  notes?: string;
-  allDay?: boolean;
-};
-
 function calendarCreateEventScript({
   calendar,
   title,
@@ -64,7 +55,7 @@ function calendarCreateEventScript({
   notes,
   allDay = false,
   recurrenceRule,
-}: CreateEventInput & { recurrenceRule?: string }): string {
+}: Omit<CreateEventInput, "recurrence"> & { recurrenceRule?: string }): string {
   const props: string[] = [`summary:${quoted(title)}`];
   if (location) props.push(`location:${quoted(location)}`);
   if (notes) props.push(`description:${quoted(notes)}`);
@@ -91,19 +82,6 @@ tell application "Calendar"
   end tell
 end tell`;
 }
-
-export type EventMatch = { calendar: string; title?: string; id?: string };
-
-export type EventChanges = {
-  newTitle?: string;
-  startDate?: string;
-  hour?: number;
-  minute?: number;
-  durationMinutes?: number;
-  location?: string;
-  notes?: string;
-  allDay?: boolean;
-};
 
 // `event id` resolves in ~0.3s where `first event whose uid is` scans the
 // whole calendar (~29s measured 2026-11-05).
@@ -190,20 +168,10 @@ end tell`;
 
 export type Calendar = {
   listCalendars(): Promise<string[]>;
-  listEvents(input: {
-    calendar?: string;
-    daysAhead?: number;
-    daysBack?: number;
-  }): Promise<string[]>;
-  searchEvents(input: {
-    query: string;
-    calendar?: string;
-    daysAhead?: number;
-  }): Promise<string[]>;
-  createEvent(
-    input: CreateEventInput & { recurrence?: Recurrence },
-  ): Promise<{ id: string; recurrenceRule?: string }>;
-  updateEvent(input: EventMatch & EventChanges): Promise<void>;
+  listEvents(input: ListEventsInput): Promise<string[]>;
+  searchEvents(input: SearchEventsInput): Promise<string[]>;
+  createEvent(input: CreateEventInput): Promise<{ id: string; recurrenceRule?: string }>;
+  updateEvent(input: UpdateEventInput): Promise<void>;
   deleteEvent(match: EventMatch): Promise<void>;
 };
 
@@ -265,165 +233,4 @@ export function createCalendar(
 end tell`);
     },
   };
-}
-
-const calendarField = z
-  .string()
-  .optional()
-  .describe("Calendar name. Omit to search all calendars.");
-
-const eventIdField = z
-  .string()
-  .optional()
-  .describe(
-    "Event id as returned by calendar_create_event or the listing tools; use instead of title",
-  );
-
-export function registerCalendarTools(
-  server: McpServer,
-  calendar: Calendar = createCalendar(),
-) {
-  server.registerTool(
-    "calendar_list_calendars",
-    {
-      title: "List Calendars",
-      description: "Get all calendar names from Apple Calendar",
-    },
-    async () => jsonResult(await calendar.listCalendars()),
-  );
-
-  server.registerTool(
-    "calendar_list_events",
-    {
-      title: "List Calendar Events",
-      description:
-        "List events for a date range. Defaults to today. Can scope to a specific calendar or search all. Each line ends with the event id.",
-      inputSchema: {
-        calendar: calendarField,
-        daysAhead: z
-          .number()
-          .default(1)
-          .describe(
-            "Number of days to look ahead from today (default: 1 = today only)",
-          ),
-        daysBack: z
-          .number()
-          .default(0)
-          .describe("Number of days to look back from today (default: 0)"),
-      },
-    },
-    async (input) => linesResult(await calendar.listEvents(input), "No events found."),
-  );
-
-  server.registerTool(
-    "calendar_create_event",
-    {
-      title: "Create Calendar Event",
-      description: "Create a new event in Apple Calendar",
-      inputSchema: {
-        calendar: z.string().describe("Calendar name to create the event in"),
-        title: z.string().describe("Event title"),
-        startDate: z
-          .string()
-          .optional()
-          .describe(
-            "Optional ISO start date. When omitted, daysFromNow is used. Timed events still use hour/minute for the time of day.",
-          ),
-        daysFromNow: z
-          .number()
-          .default(0)
-          .describe("Days from today (0 = today, 1 = tomorrow, etc.)"),
-        hour: z.number().min(0).max(23).describe("Start hour (24h format)"),
-        minute: z.number().min(0).max(59).default(0).describe("Start minute"),
-        durationMinutes: z
-          .number()
-          .default(60)
-          .describe("Duration in minutes (default: 60)"),
-        location: z.string().optional().describe("Event location"),
-        notes: z.string().optional().describe("Event notes/description"),
-        allDay: z
-          .boolean()
-          .default(false)
-          .describe("Create as an all-day event"),
-        recurrence: recurrenceSchema
-          .optional()
-          .describe(
-            'Optional recurrence rule. Example: {"frequency":"monthly","interval":4} repeats every 4 months indefinitely.',
-          ),
-      },
-    },
-    async (input) => {
-      const { id, recurrenceRule } = await calendar.createEvent(input);
-      const suffix = recurrenceRule ? ` with recurrence ${recurrenceRule}` : "";
-      return textResult(
-        `Created event "${input.title}" on calendar "${input.calendar}"${suffix} (id: ${id}).`,
-      );
-    },
-  );
-
-  server.registerTool(
-    "calendar_search_events",
-    {
-      title: "Search Calendar Events",
-      description:
-        "Search for events by name. Scopes to a specific calendar and upcoming 30 days by default.",
-      inputSchema: {
-        query: z.string().describe("Search term to match in event titles"),
-        calendar: calendarField,
-        daysAhead: z
-          .number()
-          .default(30)
-          .describe("How many days ahead to search (default: 30)"),
-      },
-    },
-    async (input) => linesResult(await calendar.searchEvents(input), "No events found."),
-  );
-
-  server.registerTool(
-    "calendar_update_event",
-    {
-      title: "Update Calendar Event",
-      description:
-        "Change an event in place: title, location, notes, date, time, duration or all-day. Finds it by exact title or by id. startDate alone moves the day and keeps the time and duration.",
-      inputSchema: {
-        calendar: z.string().describe("Calendar name"),
-        title: z.string().optional().describe("Exact current title of the event"),
-        id: eventIdField,
-        newTitle: z.string().optional().describe("New title"),
-        startDate: z.string().optional().describe("New ISO date, e.g. 2026-12-03"),
-        hour: z.number().min(0).max(23).optional().describe("New start hour (24h)"),
-        minute: z.number().min(0).max(59).optional().describe("New start minute"),
-        durationMinutes: z.number().optional().describe("New duration in minutes"),
-        location: z.string().optional().describe("New location"),
-        notes: z.string().optional().describe("New notes/description"),
-        allDay: z.boolean().optional().describe("Make the event all-day (true) or timed (false)"),
-      },
-    },
-    async (input) => {
-      await calendar.updateEvent(input);
-      return textResult(
-        `Updated event ${matchLabel({ name: input.title, id: input.id })}.`,
-      );
-    },
-  );
-
-  server.registerTool(
-    "calendar_delete_event",
-    {
-      title: "Delete Calendar Event",
-      description:
-        "Delete an event by its exact title or by id. Deletes the first match on the specified calendar.",
-      inputSchema: {
-        calendar: z.string().describe("Calendar name"),
-        title: z.string().optional().describe("Exact title of the event to delete"),
-        id: eventIdField,
-      },
-    },
-    async (input) => {
-      await calendar.deleteEvent(input);
-      return textResult(
-        `Deleted event ${matchLabel({ name: input.title, id: input.id })}.`,
-      );
-    },
-  );
 }

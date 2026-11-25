@@ -1,10 +1,7 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import {
   runAppleScript,
   runNameList,
   matchClause,
-  matchLabel,
   deleteFirstMatching,
   requireMatching,
   parseList,
@@ -16,14 +13,20 @@ import {
   SLOW_QUERY_TIMEOUT_MS,
   type RunScript,
 } from "./osascript.ts";
-import { jsonResult, linesResult, textResult } from "./results.ts";
 import {
-  recurrenceSchema,
   recurrenceRule,
   recurrenceUntilDate,
   type Recurrence,
 } from "./recurrence.ts";
 import { eventStoreStatements } from "./eventkit.ts";
+import type {
+  CreateReminderInput,
+  ListRemindersInput,
+  ReminderChanges,
+  ReminderMatch,
+  SearchRemindersInput,
+  UpdateReminderInput,
+} from "./reminders.inputs.ts";
 
 const PROPERTY_LIST_VARS = {
   name: "nameList",
@@ -117,14 +120,7 @@ function reminderCreateScript({
   dueDate,
   allDay,
   priority,
-}: {
-  listName: string;
-  name: string;
-  notes?: string;
-  dueDate?: string;
-  allDay?: boolean;
-  priority?: number;
-}): string {
+}: Omit<CreateReminderInput, "recurrence">): string {
   const props: string[] = [`name:${quoted(name)}`];
   if (notes) props.push(`body:${quoted(notes)}`);
   if (dueDate) props.push(`${dueDateProperty(dueDate, allDay)}:theDueDate`);
@@ -195,32 +191,14 @@ function parseReminderId(raw: string): string {
   return id;
 }
 
-export type ReminderMatch = { listName: string; name?: string; id?: string };
-
-export type ReminderChanges = {
-  title?: string;
-  notes?: string;
-  dueDate?: string;
-  allDay?: boolean;
-  priority?: number;
-};
-
 export type Reminders = {
   listLists(): Promise<string[]>;
-  list(input: { listName: string; includeCompleted?: boolean }): Promise<string[]>;
-  create(input: {
-    listName: string;
-    name: string;
-    notes?: string;
-    dueDate?: string;
-    allDay?: boolean;
-    priority?: number;
-    recurrence?: Recurrence;
-  }): Promise<{ id: string; recurrenceRule?: string }>;
-  update(input: ReminderMatch & ReminderChanges): Promise<void>;
+  list(input: ListRemindersInput): Promise<string[]>;
+  create(input: CreateReminderInput): Promise<{ id: string; recurrenceRule?: string }>;
+  update(input: UpdateReminderInput): Promise<void>;
   complete(match: ReminderMatch): Promise<void>;
   delete(match: ReminderMatch): Promise<void>;
-  search(input: { query: string; includeCompleted?: boolean }): Promise<string[]>;
+  search(input: SearchRemindersInput): Promise<string[]>;
 };
 
 export function createReminders(run: RunScript = runAppleScript): Reminders {
@@ -284,164 +262,4 @@ end tell`);
       );
     },
   };
-}
-
-const listNameField = z.string().describe("Name of the reminder list");
-const reminderIdField = z
-  .string()
-  .optional()
-  .describe("Reminder id as returned by reminders_create, reminders_list or reminders_search; use instead of name");
-
-const dueDateField = z
-  .string()
-  .optional()
-  .describe(
-    'Due date as YYYY-MM-DD (all-day) or YYYY-MM-DD HH:MM[:SS], e.g. "2026-06-10 09:00:00"',
-  );
-const priorityField = z
-  .number()
-  .min(0)
-  .max(9)
-  .optional()
-  .describe("Priority: 0=none, 1-4=high, 5=medium, 6-9=low");
-
-export function registerRemindersTools(
-  server: McpServer,
-  reminders: Reminders = createReminders(),
-) {
-  server.registerTool(
-    "reminders_list_lists",
-    {
-      title: "List Reminder Lists",
-      description: "Get all reminder list names from Apple Reminders",
-    },
-    async () => jsonResult(await reminders.listLists()),
-  );
-
-  server.registerTool(
-    "reminders_list",
-    {
-      title: "List Reminders",
-      description:
-        "List reminders in a specific list. Returns name, due date, priority, notes, and id for each.",
-      inputSchema: {
-        listName: listNameField,
-        includeCompleted: z
-          .boolean()
-          .default(false)
-          .describe("Include completed reminders"),
-      },
-    },
-    async (input) => linesResult(await reminders.list(input), "No reminders found."),
-  );
-
-  server.registerTool(
-    "reminders_create",
-    {
-      title: "Create Reminder",
-      description: "Create a new reminder in Apple Reminders",
-      inputSchema: {
-        listName: listNameField,
-        name: z.string().describe("Reminder title"),
-        notes: z.string().optional().describe("Notes/body for the reminder"),
-        dueDate: dueDateField,
-        allDay: z
-          .boolean()
-          .default(false)
-          .describe(
-            "Create with an all-day due date. Date-only dueDate values are treated as all-day even when this is false.",
-          ),
-        priority: priorityField,
-        recurrence: recurrenceSchema
-          .optional()
-          .describe(
-            'Optional recurrence rule, same shape as calendar_create_event. Example: {"frequency":"monthly","interval":1} repeats every month.',
-          ),
-      },
-    },
-    async (input) => {
-      const { id, recurrenceRule } = await reminders.create(input);
-      const suffix = recurrenceRule ? ` with recurrence ${recurrenceRule}` : "";
-      return textResult(
-        `Created reminder "${input.name}" in list "${input.listName}"${suffix} (id: ${id}).`,
-      );
-    },
-  );
-
-  server.registerTool(
-    "reminders_update",
-    {
-      title: "Update Reminder",
-      description:
-        "Change a reminder's title, notes, due date or priority in place. Finds it by exact name or by id.",
-      inputSchema: {
-        listName: listNameField,
-        name: z.string().optional().describe("Exact current name of the reminder"),
-        id: reminderIdField,
-        title: z.string().optional().describe("New title"),
-        notes: z.string().optional().describe("New notes/body"),
-        dueDate: dueDateField,
-        allDay: z
-          .boolean()
-          .optional()
-          .describe("With dueDate: make it an all-day due date"),
-        priority: priorityField,
-      },
-    },
-    async (input) => {
-      await reminders.update(input);
-      return textResult(`Updated reminder ${matchLabel(input)}.`);
-    },
-  );
-
-  server.registerTool(
-    "reminders_complete",
-    {
-      title: "Complete Reminder",
-      description: "Mark a reminder as completed",
-      inputSchema: {
-        listName: listNameField,
-        name: z.string().optional().describe("Exact name of the reminder to complete"),
-        id: reminderIdField,
-      },
-    },
-    async (input) => {
-      await reminders.complete(input);
-      return textResult(`Completed reminder ${matchLabel(input)}.`);
-    },
-  );
-
-  server.registerTool(
-    "reminders_delete",
-    {
-      title: "Delete Reminder",
-      description: "Delete a reminder from a list",
-      inputSchema: {
-        listName: listNameField,
-        name: z.string().optional().describe("Exact name of the reminder to delete"),
-        id: reminderIdField,
-      },
-    },
-    async (input) => {
-      await reminders.delete(input);
-      return textResult(`Deleted reminder ${matchLabel(input)}.`);
-    },
-  );
-
-  server.registerTool(
-    "reminders_search",
-    {
-      title: "Search Reminders",
-      description:
-        "Search for reminders by name across all lists. Returns only incomplete reminders by default, one line each with list name, due date, priority, notes, and id. With includeCompleted, returns names only.",
-      inputSchema: {
-        query: z.string().describe("Search term to match in reminder names"),
-        includeCompleted: z
-          .boolean()
-          .default(false)
-          .describe("Include completed reminders in search"),
-      },
-    },
-    async (input) => linesResult(await reminders.search(input), "No reminders found."),
-  );
 }

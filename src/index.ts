@@ -2,9 +2,9 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { registerRemindersTools } from "./reminders.ts";
-import { registerNotesTools } from "./notes.ts";
-import { registerCalendarTools } from "./calendar.ts";
+import { registerRemindersTools } from "./reminders.tools.ts";
+import { registerNotesTools } from "./notes.tools.ts";
+import { registerCalendarTools } from "./calendar.tools.ts";
 import pkg from "../package.json" with { type: "json" };
 
 const server = new McpServer({
