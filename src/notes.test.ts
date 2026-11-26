@@ -42,7 +42,27 @@ describe("notes", () => {
     await createNotes(run).edit({ name: "Plan", title: "New" });
 
     expect(scripts[0]).toContain('set name of targetNote to "New"');
-    expect(scripts[0]).not.toContain("set body of n");
+    expect(scripts[0]).not.toContain("set body of targetNote");
+  });
+
+  test("edit keeps the current name as the first line of a new body", async () => {
+    const { run, scripts } = recordingRun();
+
+    await createNotes(run).edit({ name: "Plan & <ideas>", body: "- one" });
+
+    expect(scripts[0]).toContain(
+      'set body of targetNote to "<div>Plan &amp; &lt;ideas&gt;</div>\n<ul>\n<li>one</li>\n</ul>"',
+    );
+
+    expect(scripts[0]).not.toContain("set name of targetNote");
+  });
+
+  test("edit puts a new title as the first line of a new body", async () => {
+    const { run, scripts } = recordingRun();
+
+    await createNotes(run).edit({ name: "Plan", title: "Trip", body: "packing" });
+
+    expect(scripts[0]).toContain('set body of targetNote to "<div>Trip</div>\npacking"');
   });
 
   test("read picks plaintext when html is off", async () => {

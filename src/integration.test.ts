@@ -448,6 +448,13 @@ end tell`),
     expect(html).toContain("Heading");
     expect(html).toContain("<b>bold</b>");
 
+    await call(handlers, "notes_edit", { name: title, body: "replaced body" });
+
+    const afterBodyEdit = await call(handlers, "notes_read", { name: title, html: false });
+
+    expect(afterBodyEdit).toContain(title);
+    expect(afterBodyEdit).toContain("replaced body");
+
     await call(handlers, "notes_edit", {
       name: title,
       title: renamed,

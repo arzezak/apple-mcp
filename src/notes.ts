@@ -6,7 +6,7 @@ import {
   scopeExpression,
 } from "./lists.ts";
 import { deleteFirstMatching } from "./matching.ts";
-import { markdownToHtml } from "./markdown.ts";
+import { escapeHtml, markdownToHtml } from "./markdown.ts";
 import type {
   CreateNoteInput,
   DeleteNoteInput,
@@ -97,6 +97,8 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
       );
     },
 
+    // Notes shows the first line of the body as the note's name, so a new
+    // body carries the title as its first line.
     async edit({ name, title, body }) {
       if (title === undefined && body === undefined) {
         throw new Error("Nothing to update. Provide a title, body, or both.");
@@ -109,10 +111,14 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
         `  set targetNote to first note whose name is ${quoted(name)}`,
       ];
 
-      if (body !== undefined)
-        lines.push(`  set body of targetNote to ${quoted(markdownToHtml(body))}`);
+      if (body !== undefined) {
+        const titleLine = `<div>${escapeHtml(title ?? name)}</div>`;
 
-      if (title !== undefined) lines.push(`  set name of targetNote to ${quoted(title)}`);
+        lines.push(`  set body of targetNote to ${quoted(`${titleLine}\n${markdownToHtml(body)}`)}`);
+      } else {
+        lines.push(`  set name of targetNote to ${quoted(title!)}`);
+      }
+
       lines.push("end tell");
       await run(lines.join("\n"));
     },
