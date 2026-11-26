@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createReminders } from "./reminders.ts";
 import { recordingRun } from "./testing.ts";
+import type { ReminderRecord, ReminderScope } from "./eventkit.ts";
 
 const ID = "x-apple-reminder://80C37AE0-1557-46BA-8185-5123E469B9D8";
 
@@ -166,72 +167,96 @@ describe("reminders.create with recurrence", () => {
   });
 });
 
-describe("reminders.list", () => {
-  test("filters completed reminders in-script by default", async () => {
-    const { run, scripts } = recordingRun("- a\n- b");
-    const lines = await createReminders(run).list({ listName: "Inbox" });
+describe("reminders.list and search", () => {
+  function reminderRecord(overrides: Partial<ReminderRecord> = {}): ReminderRecord {
+    return {
+      list: "Inbox",
+      name: "Pay rent",
+      notes: "",
+      priority: 0,
+      due: null,
+      timed: false,
+      id: "x-apple-reminder://ABC",
+      ...overrides,
+    };
+  }
 
-    expect(lines).toEqual(["- a", "- b"]);
-    expect(scripts[0]).toContain('repeat with currentList in {list "Inbox"}');
-    expect(scripts[0]).toContain("whose completed is false");
-    expect(scripts[0]).toContain('" | id: " & id of reminderRecord');
-  });
+  function remindersWith(records: ReminderRecord[]) {
+    const scopes: ReminderScope[] = [];
 
-  test("joins multi-line notes with a separator so each reminder stays on one line", async () => {
-    const { run, scripts } = recordingRun();
-    await createReminders(run).list({ listName: "Inbox" });
-
-    expect(scripts[0]).toContain(
-      "set AppleScript's text item delimiters to {return & linefeed, return, linefeed}",
-    );
-
-    expect(scripts[0]).toContain('set AppleScript\'s text item delimiters to " / "');
-    expect(scripts[0]).toContain('" | notes: " & (noteLines as text)');
-  });
-
-  test("reads every reminder when completed ones are included", async () => {
-    const { run, scripts } = recordingRun("");
-
-    const lines = await createReminders(run).list({
-      listName: "Inbox",
-      includeCompleted: true,
+    const reminders = createReminders(recordingRun().run, {
+      readReminders: async (scope) => {
+        scopes.push(scope);
+        return records;
+      },
     });
 
+    return { reminders, scopes };
+  }
+
+  test("lists the incomplete reminders of one list by default", async () => {
+    const { reminders, scopes } = remindersWith([reminderRecord()]);
+
+    const lines = await reminders.list({ listName: "Inbox" });
+
+    expect(scopes).toEqual([{ listName: "Inbox", includeCompleted: false }]);
+    expect(lines).toEqual(["- Pay rent | id: x-apple-reminder://ABC"]);
+  });
+
+  test("reads completed reminders too when asked", async () => {
+    const { reminders, scopes } = remindersWith([]);
+
+    const lines = await reminders.list({ listName: "Inbox", includeCompleted: true });
+
+    expect(scopes).toEqual([{ listName: "Inbox", includeCompleted: true }]);
     expect(lines).toEqual([]);
-    expect(scripts[0]).toContain("name of every reminder");
-    expect(scripts[0]).toContain("set idList to id of every reminder");
-    expect(scripts[0]).toContain('" | id: " & item reminderIndex of idList');
-    expect(scripts[0]).not.toContain("whose completed");
-  });
-});
-
-describe("reminders.search", () => {
-  test("walks every list and prefixes lines with the list name", async () => {
-    const { run, scripts } = recordingRun("Inbox: a | id: x");
-    const lines = await createReminders(run).search({ query: 'Pay "bill"' });
-
-    expect(lines).toEqual(["Inbox: a | id: x"]);
-    expect(scripts[0]).toContain("repeat with currentList in every list");
-
-    expect(scripts[0]).toContain(
-      'properties of (every reminder of currentList whose completed is false and name contains "Pay \\"bill\\"")',
-    );
-
-    expect(scripts[0]).toContain('set outputLine to (name of currentList) & ": " & name of reminderRecord');
-    expect(scripts[0]).toContain('" | id: " & id of reminderRecord');
   });
 
-  test("returns names only when completed reminders are included", async () => {
-    const { run, scripts } = recordingRun("a\nb");
+  test("shows a timed due date with its time and an all-day one without", async () => {
+    const { reminders } = remindersWith([
+      reminderRecord({ due: new Date(2026, 10, 26, 9, 30), timed: true }),
+      reminderRecord({ due: new Date(2026, 10, 27), timed: false }),
+    ]);
 
-    const lines = await createReminders(run).search({
-      query: "a",
-      includeCompleted: true,
-    });
+    const lines = await reminders.list({ listName: "Inbox" });
 
-    expect(lines).toEqual(["a", "b"]);
-    expect(scripts[0]).toContain('name of (every reminder whose name contains "a")');
-    expect(scripts[0]).not.toContain("completed is false");
+    expect(lines).toEqual([
+      "- Pay rent | due: Thursday, November 26, 2026 at 9:30:00 AM | id: x-apple-reminder://ABC",
+      "- Pay rent | due: Friday, November 27, 2026 | id: x-apple-reminder://ABC",
+    ]);
+  });
+
+  test("adds priority and joins multi-line notes so each reminder stays on one line", async () => {
+    const { reminders } = remindersWith([
+      reminderRecord({ priority: 1, notes: "first\r\nsecond\n\nthird" }),
+    ]);
+
+    const lines = await reminders.list({ listName: "Inbox" });
+
+    expect(lines).toEqual([
+      "- Pay rent | priority: 1 | notes: first / second / third | id: x-apple-reminder://ABC",
+    ]);
+  });
+
+  test("search reads every list, matches names ignoring case and prefixes the list", async () => {
+    const { reminders, scopes } = remindersWith([
+      reminderRecord({ list: "Home", name: 'Pay "BILL" today' }),
+      reminderRecord({ name: "Call Sam" }),
+    ]);
+
+    const lines = await reminders.search({ query: 'pay "bill"' });
+
+    expect(scopes).toEqual([{ includeCompleted: false }]);
+    expect(lines).toEqual(['Home: Pay "BILL" today | id: x-apple-reminder://ABC']);
+  });
+
+  test("search returns full lines for completed reminders too", async () => {
+    const { reminders, scopes } = remindersWith([reminderRecord({ priority: 5 })]);
+
+    const lines = await reminders.search({ query: "rent", includeCompleted: true });
+
+    expect(scopes).toEqual([{ includeCompleted: true }]);
+    expect(lines).toEqual(["Inbox: Pay rent | priority: 5 | id: x-apple-reminder://ABC"]);
   });
 });
 

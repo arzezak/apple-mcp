@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { eventKitEvents, eventStoreStatements } from "./eventkit.ts";
+import { eventKitEvents, eventKitReminders, eventStoreStatements } from "./eventkit.ts";
 import { recordingRun } from "./testing.ts";
 
 describe("eventKitEvents", () => {
@@ -37,6 +37,43 @@ describe("eventKitEvents", () => {
 
     expect(scripts[0]).toContain('const calendarName = "Work \\"Office\\"";');
     expect(scripts[0]).toContain(`new Date(${RANGE.start.getTime()}), new Date(${RANGE.end.getTime()})`);
+  });
+});
+
+describe("eventKitReminders", () => {
+  test("turns the rows the JXA script prints into reminder records", async () => {
+    const row = {
+      list: "Inbox",
+      name: "Pay rent",
+      notes: "",
+      priority: 0,
+      due: new Date(2026, 10, 26, 9, 30).getTime(),
+      timed: true,
+      id: "x-apple-reminder://ABC",
+    };
+
+    const { run, languages } = recordingRun(JSON.stringify([row, { ...row, due: null, timed: false }]));
+
+    const reminders = await eventKitReminders(run)({ includeCompleted: false });
+
+    expect(languages).toEqual(["JavaScript"]);
+
+    expect(reminders).toEqual([
+      { ...row, due: new Date(2026, 10, 26, 9, 30) },
+      { ...row, due: null, timed: false },
+    ]);
+  });
+
+  test("asks only for incomplete reminders unless completed ones are wanted", async () => {
+    const { run, scripts } = recordingRun("[]");
+
+    await eventKitReminders(run)({ listName: 'Home "base"', includeCompleted: false });
+    await eventKitReminders(run)({ includeCompleted: true });
+
+    expect(scripts[0]).toContain('const listName = "Home \\"base\\"";');
+    expect(scripts[0]).toContain("predicateForIncompleteRemindersWithDueDateStartingEndingCalendars(");
+    expect(scripts[1]).toContain("const listName = null;");
+    expect(scripts[1]).toContain("store.predicateForRemindersInCalendars(lists)");
   });
 });
 

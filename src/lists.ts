@@ -33,3 +33,10 @@ export async function runNameList(
 ): Promise<string[]> {
   return parseList(await run(nameListScript(application, listExpression), options));
 }
+
+export function singleLine(text: string): string {
+  return text
+    .split(/\s*[\r\n]+\s*/)
+    .filter(Boolean)
+    .join(" / ");
+}

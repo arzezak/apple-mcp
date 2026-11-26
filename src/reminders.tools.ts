@@ -97,7 +97,7 @@ export function registerRemindersTools(
     {
       title: "Search Reminders",
       description:
-        "Search for reminders by name across all lists. Returns only incomplete reminders by default, one line each with list name, due date, priority, notes, and id. With includeCompleted, returns names only.",
+        "Search for reminders by name across all lists. Returns only incomplete reminders by default, one line each with list name, due date, priority, notes, and id.",
       inputSchema: searchRemindersInput.shape,
     },
     async (input) => linesResult(await reminders.search(input), "No reminders found."),

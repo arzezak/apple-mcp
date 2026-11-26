@@ -16,7 +16,8 @@ const ENTITIES = {
 } as const;
 
 // The bridge returns the authorization status as a string, hence Number().
-// The completion callback never fires under osascript, so the status is polled.
+// The access request's completion callback never fires under osascript, so
+// the status is polled.
 export function eventStoreStatements(entity: keyof typeof ENTITIES): string {
   const { type, request, denied } = ENTITIES[entity];
 
@@ -94,6 +95,91 @@ export function eventKitEvents(run: RunScript): ReadEvents {
       ...row,
       start: new Date(row.start),
       end: new Date(row.end),
+    }));
+  };
+}
+
+export type ReminderRecord = {
+  list: string;
+  name: string;
+  notes: string;
+  priority: number;
+  due: Date | null;
+  timed: boolean;
+  id: string;
+};
+
+export type ReminderScope = { listName?: string; includeCompleted: boolean };
+
+export type ReadReminders = (scope: ReminderScope) => Promise<ReminderRecord[]>;
+
+type ReminderRow = Omit<ReminderRecord, "due"> & { due: number | null };
+
+function remindersScript({ listName, includeCompleted }: ReminderScope): string {
+  const predicate = includeCompleted
+    ? "store.predicateForRemindersInCalendars(lists)"
+    : "store.predicateForIncompleteRemindersWithDueDateStartingEndingCalendars($(), $(), lists)";
+
+  return `${eventStoreStatements("reminders")}
+
+const listName = ${JSON.stringify(listName ?? null)};
+let lists = $();
+
+if (listName !== null) {
+  const namedLists = ObjC.unwrap(store.calendarsForEntityType(1)).filter(
+    (candidate) => ObjC.unwrap(candidate.title) === listName,
+  );
+
+  if (namedLists.length === 0) throw new Error("No list named " + listName + ".");
+
+  lists = $(namedLists);
+}
+
+let fetched = null;
+
+store.fetchRemindersMatchingPredicateCompletion(${predicate}, (reminders) => {
+  fetched = reminders;
+});
+
+const fetchDeadline = Date.now() + 30000;
+
+while (fetched === null && Date.now() < fetchDeadline)
+  $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.05));
+
+if (fetched === null) throw new Error("Reminders did not return the reminders in time.");
+
+const text = (value) => ObjC.unwrap(value) || "";
+
+JSON.stringify(
+  (ObjC.unwrap(fetched) || []).map((reminder) => {
+    const due = reminder.dueDateComponents;
+    const hasDue = !due.isNil();
+
+    return {
+      list: text(reminder.calendar.title),
+      name: text(reminder.title),
+      notes: text(reminder.notes),
+      priority: Number(reminder.priority),
+      due: hasDue ? ObjC.unwrap($.NSCalendar.currentCalendar.dateFromComponents(due)).getTime() : null,
+      timed: hasDue && Number(due.hour) < 24,
+      id: "x-apple-reminder://" + text(reminder.calendarItemIdentifier),
+    };
+  }),
+);`;
+}
+
+// EventKit, not AppleScript: incomplete reminders across every list took
+// 16-35s through a whose filter against 0.15s, and with completed ones 136s
+// against 0.3s (2026-11-26). An all-day due date has no hour component.
+export function eventKitReminders(run: RunScript): ReadReminders {
+  return async (scope) => {
+    const rows: ReminderRow[] = JSON.parse(
+      await run(remindersScript(scope), { timeoutMs: SLOW_QUERY_TIMEOUT_MS, language: "JavaScript" }),
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      due: row.due === null ? null : new Date(row.due),
     }));
   };
 }

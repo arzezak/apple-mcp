@@ -1,23 +1,23 @@
+import { runAppleScript, quoted, type RunScript } from "./osascript.ts";
+import { runNameList, singleLine } from "./lists.ts";
 import {
-  runAppleScript,
-  quoted,
-  SLOW_QUERY_TIMEOUT_MS,
-  type RunScript,
-} from "./osascript.ts";
-import {
-  runNameList,
-  parseList,
-  joinLinefeedScript,
-  scopeExpression,
-} from "./lists.ts";
-import { appleScriptDateStatements, hasTimeComponent } from "./dates.ts";
+  appleScriptDateStatements,
+  formatDate,
+  formatDateTime,
+  hasTimeComponent,
+} from "./dates.ts";
 import { whoseClause, deleteFirstMatching, requireMatching } from "./matching.ts";
 import {
   recurrenceRule,
   recurrenceUntilDate,
   type Recurrence,
 } from "./recurrence.ts";
-import { eventStoreStatements } from "./eventkit.ts";
+import {
+  eventKitReminders,
+  eventStoreStatements,
+  type ReadReminders,
+  type ReminderRecord,
+} from "./eventkit.ts";
 import type {
   CreateReminderInput,
   ListRemindersInput,
@@ -27,91 +27,20 @@ import type {
   UpdateReminderInput,
 } from "./reminders.inputs.ts";
 
-const PROPERTY_LIST_VARS = {
-  name: "nameList",
-  "due date": "dueDateList",
-  "allday due date": "allDayDueDateList",
-  priority: "priorityList",
-  body: "bodyList",
-  id: "idList",
-} as const;
+function reminderLine(reminder: ReminderRecord, withList: boolean): string {
+  const prefix = withList ? `${reminder.list}: ` : "- ";
+  const parts = [`${prefix}${singleLine(reminder.name)}`];
+  const notes = singleLine(reminder.notes);
 
-type ReminderProperty = keyof typeof PROPERTY_LIST_VARS;
+  if (reminder.due) {
+    parts.push(`due: ${reminder.timed ? formatDateTime(reminder.due) : formatDate(reminder.due)}`);
+  }
 
-function reminderLineStatements(
-  read: (property: ReminderProperty) => string,
-  prefix = '"- "',
-): string {
-  return `set outputLine to ${prefix} & ${read("name")}
-    try
-      set dueValue to ${read("due date")}
-      if dueValue is missing value then set dueValue to ${read("allday due date")}
-      if dueValue is not missing value then set outputLine to outputLine & " | due: " & (dueValue as text)
-    end try
-    try
-      set priorityValue to ${read("priority")}
-      if priorityValue is not 0 then set outputLine to outputLine & " | priority: " & priorityValue
-    end try
-    try
-      set noteText to ${read("body")}
-      if noteText is not missing value and noteText is not "" then
-        set AppleScript's text item delimiters to {return & linefeed, return, linefeed}
-        set noteLines to text items of noteText
-        set AppleScript's text item delimiters to " / "
-        set outputLine to outputLine & " | notes: " & (noteLines as text)
-      end if
-    end try
-    set outputLine to outputLine & " | id: " & ${read("id")}
-    set end of outputLines to outputLine`;
-}
+  if (reminder.priority !== 0) parts.push(`priority: ${reminder.priority}`);
+  if (notes) parts.push(`notes: ${notes}`);
+  parts.push(`id: ${reminder.id}`);
 
-// Fastest measured shape when filtering: per-property fetches would
-// re-evaluate the completed filter once per property. Scoped to one list for
-// reminders_list; across every list for reminders_search, where each line
-// carries the list name that reminders_complete and reminders_delete need
-// (~2x an app-wide name-only query: 32s vs 16s warm on 10 lists, 2026-11-04).
-function incompleteRemindersScript({
-  listName,
-  query,
-}: {
-  listName?: string;
-  query?: string;
-}): string {
-  const filter =
-    "completed is false" + (query ? ` and name contains ${quoted(query)}` : "");
-
-  const prefix = listName ? '"- "' : '(name of currentList) & ": "';
-
-  return `tell application "Reminders"
-  set outputLines to {}
-  repeat with currentList in ${scopeExpression("list", listName)}
-    set recordList to properties of (every reminder of currentList whose ${filter})
-    repeat with reminderRecord in recordList
-      ${reminderLineStatements((property) => `${property} of reminderRecord`, prefix)}
-    end repeat
-  end repeat
-  ${joinLinefeedScript("outputLines")}
-end tell`;
-}
-
-// Fastest measured shape without a filter: "properties of every reminder"
-// is several times slower because it returns full records for completed ones too.
-function allRemindersScript(listName: string): string {
-  return `tell application "Reminders"
-  tell list ${quoted(listName)}
-    set nameList to name of every reminder
-    set bodyList to body of every reminder
-    set dueDateList to due date of every reminder
-    set allDayDueDateList to allday due date of every reminder
-    set priorityList to priority of every reminder
-    set idList to id of every reminder
-  end tell
-  set outputLines to {}
-  repeat with reminderIndex from 1 to count of nameList
-    ${reminderLineStatements((property) => `item reminderIndex of ${PROPERTY_LIST_VARS[property]}`)}
-  end repeat
-  ${joinLinefeedScript("outputLines")}
-end tell`;
+  return parts.join(" | ");
 }
 
 function reminderCreateScript({
@@ -208,16 +137,17 @@ export type Reminders = {
   search(input: SearchRemindersInput): Promise<string[]>;
 };
 
-export function createReminders(run: RunScript = runAppleScript): Reminders {
+export function createReminders(
+  run: RunScript = runAppleScript,
+  { readReminders = eventKitReminders(run) }: { readReminders?: ReadReminders } = {},
+): Reminders {
   return {
     listLists: () => runNameList(run, "Reminders", "name of every list"),
 
     async list({ listName, includeCompleted = false }) {
-      const script = includeCompleted
-        ? allRemindersScript(listName)
-        : incompleteRemindersScript({ listName });
+      const reminders = await readReminders({ listName, includeCompleted });
 
-      return parseList(await run(script));
+      return reminders.map((reminder) => reminderLine(reminder, false));
     },
 
     async create({ recurrence, ...input }) {
@@ -258,21 +188,13 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
 end tell`);
     },
 
-    // Full records for completed reminders across every list took 136s
-    // (2026-11-04), so that mode returns names only.
     async search({ query, includeCompleted = false }) {
-      if (includeCompleted) {
-        return runNameList(
-          run,
-          "Reminders",
-          `name of (every reminder whose name contains ${quoted(query)})`,
-          { timeoutMs: SLOW_QUERY_TIMEOUT_MS },
-        );
-      }
+      const loweredQuery = query.toLowerCase();
+      const reminders = await readReminders({ includeCompleted });
 
-      return parseList(
-        await run(incompleteRemindersScript({ query }), { timeoutMs: SLOW_QUERY_TIMEOUT_MS }),
-      );
+      return reminders
+        .filter((reminder) => reminder.name.toLowerCase().includes(loweredQuery))
+        .map((reminder) => reminderLine(reminder, true));
     },
   };
 }

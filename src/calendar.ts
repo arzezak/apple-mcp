@@ -4,8 +4,8 @@ import {
   SLOW_QUERY_TIMEOUT_MS,
   type RunScript,
 } from "./osascript.ts";
-import { runNameList } from "./lists.ts";
-import { appleScriptDateStatements } from "./dates.ts";
+import { runNameList, singleLine } from "./lists.ts";
+import { appleScriptDateStatements, formatDateTime } from "./dates.ts";
 import { eventSpecifier, requireEvent } from "./matching.ts";
 import { recurrenceRule } from "./recurrence.ts";
 import { eventKitEvents, type EventRecord, type ReadEvents } from "./eventkit.ts";
@@ -24,24 +24,12 @@ set minutes of ${varName} to ${minute}
 set seconds of ${varName} to 0`;
 }
 
-const eventDateFormat = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "full",
-  timeStyle: "medium",
-});
-
-function singleLine(text: string): string {
-  return text
-    .split(/\s*[\r\n]+\s*/)
-    .filter(Boolean)
-    .join(" / ");
-}
-
 function eventLine(event: EventRecord, withCalendar: boolean): string {
   const prefix = withCalendar ? `${event.calendar}: ` : "";
   const location = singleLine(event.location);
   const place = location ? ` @ ${location}` : "";
 
-  return `${prefix}${singleLine(event.title)} | ${eventDateFormat.format(event.start)} → ${eventDateFormat.format(event.end)}${place} | id: ${event.id}`;
+  return `${prefix}${singleLine(event.title)} | ${formatDateTime(event.start)} → ${formatDateTime(event.end)}${place} | id: ${event.id}`;
 }
 
 function calendarCreateEventScript({

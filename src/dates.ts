@@ -39,3 +39,18 @@ const TIME_COMPONENT_RE =
 export function hasTimeComponent(input: string): boolean {
   return TIME_COMPONENT_RE.test(input);
 }
+
+const dateTimeFormat = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "full",
+  timeStyle: "medium",
+});
+
+const dateFormat = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });
+
+export function formatDateTime(date: Date): string {
+  return dateTimeFormat.format(date);
+}
+
+export function formatDate(date: Date): string {
+  return dateFormat.format(date);
+}
