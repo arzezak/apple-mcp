@@ -31,8 +31,6 @@ export function runAppleScript(
   });
 }
 
-// Whose-filter scans measured past the default 30s: an all-calendars 7-day
-// event query took 43s warm across ten calendars (2026-09-14).
 export const SLOW_QUERY_TIMEOUT_MS = 60_000;
 
 export function quoted(text: string): string {

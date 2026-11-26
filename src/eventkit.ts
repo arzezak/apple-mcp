@@ -82,8 +82,6 @@ JSON.stringify(
 );`;
 }
 
-// EventKit, not AppleScript: a whose filter reads every event of a calendar
-// (176s across eleven calendars against 0.13s, 2026-11-25).
 // calendarItemIdentifier is the uid that AppleScript's `event id` takes.
 export function eventKitEvents(run: RunScript): ReadEvents {
   return async (range) => {
@@ -168,9 +166,7 @@ JSON.stringify(
 );`;
 }
 
-// EventKit, not AppleScript: incomplete reminders across every list took
-// 16-35s through a whose filter against 0.15s, and with completed ones 136s
-// against 0.3s (2026-11-26). An all-day due date has no hour component.
+// An all-day due date has no hour component.
 export function eventKitReminders(run: RunScript): ReadReminders {
   return async (scope) => {
     const rows: ReminderRow[] = JSON.parse(
