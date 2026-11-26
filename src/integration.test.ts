@@ -86,7 +86,7 @@ async function readReminder(id: string) {
   set dueValue to due date of targetReminder
   return (name of targetReminder) & linefeed & (body of targetReminder) & linefeed & ((priority of targetReminder) as text) & linefeed & ${dateStamp("dueValue")}
 end tell`,
-    60_000,
+    { timeoutMs: 60_000 },
   );
 
   const [name, notes, priority, due] = raw.split("\n");
@@ -102,8 +102,7 @@ async function reminderHasDueTime(id: string): Promise<boolean> {
     `ObjC.import("EventKit");
 const store = $.EKEventStore.alloc.init;
 String(Number(store.calendarItemWithIdentifier(${JSON.stringify(uuid)}).dueDateComponents.hour) < 24);`,
-    60_000,
-    "JavaScript",
+    { timeoutMs: 60_000, language: "JavaScript" },
   );
 
   return raw === "true";
@@ -124,8 +123,7 @@ JSON.stringify({
   count: hasEnd ? Number(end.occurrenceCount) : 0,
   until: hasEnd && !end.endDate.isNil() ? Number(end.endDate.timeIntervalSince1970) : null,
 });`,
-    60_000,
-    "JavaScript",
+    { timeoutMs: 60_000, language: "JavaScript" },
   );
 
   return JSON.parse(raw);
@@ -139,7 +137,7 @@ async function readEvent(id: string) {
   set endValue to end date of targetEvent
   return (summary of targetEvent) & linefeed & (location of targetEvent) & linefeed & (description of targetEvent) & linefeed & ((allday event of targetEvent) as text) & linefeed & ${dateStamp("startValue")} & linefeed & ${dateStamp("endValue")}
 end tell`,
-    60_000,
+    { timeoutMs: 60_000 },
   );
 
   const [title, location, notes, allDay, start, end] = raw.split("\n");
@@ -180,7 +178,7 @@ tell application "Reminders"
     set lookupId to id of (first reminder of box whose name is ${quoted(title)} and body is ${quoted(secondBody)})`,
     "boxId & linefeed & valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId",
   )}
-end tell`, 110_000);
+end tell`, { timeoutMs: 110_000 });
 
     const [listId, firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
       raw.split("\n");
@@ -219,7 +217,7 @@ tell application "Notes"
     end repeat`,
     "valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId",
   )}
-end tell`, 110_000);
+end tell`, { timeoutMs: 110_000 });
 
     const [firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
       raw.split("\n");
@@ -255,7 +253,7 @@ tell application "Calendar"
     set lookupId to uid of (first event of box whose summary is ${quoted(title)} and description is ${quoted(secondDescription)})`,
     "valueA & linefeed & valueB & linefeed & lookupTitle & linefeed & lookupId",
   )}
-end tell`, 110_000);
+end tell`, { timeoutMs: 110_000 });
 
     const [firstId, secondId, foundByIdTitle, foundByTitleAndBodyId] =
       raw.split("\n");

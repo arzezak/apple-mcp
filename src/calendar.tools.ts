@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { matchLabel } from "./osascript.ts";
+import { matchLabel } from "./matching.ts";
 import { jsonResult, linesResult, textResult } from "./results.ts";
 import { createCalendar, type Calendar } from "./calendar.ts";
 import {

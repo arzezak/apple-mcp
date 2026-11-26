@@ -1,18 +1,17 @@
 import {
   runAppleScript,
-  runNameList,
-  matchClause,
-  deleteFirstMatching,
-  requireMatching,
-  parseList,
   quoted,
-  appleScriptDateStatements,
-  hasTimeComponent,
-  joinLinefeedScript,
-  scopeExpression,
   SLOW_QUERY_TIMEOUT_MS,
   type RunScript,
 } from "./osascript.ts";
+import {
+  runNameList,
+  parseList,
+  joinLinefeedScript,
+  scopeExpression,
+} from "./lists.ts";
+import { appleScriptDateStatements, hasTimeComponent } from "./dates.ts";
+import { whoseClause, deleteFirstMatching, requireMatching } from "./matching.ts";
 import {
   recurrenceRule,
   recurrenceUntilDate,
@@ -227,7 +226,7 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
 
       if (recurrence) {
         try {
-          await run(reminderRecurrenceScript(id, recurrence), undefined, "JavaScript");
+          await run(reminderRecurrenceScript(id, recurrence), { language: "JavaScript" });
         } catch (error) {
           throw new Error(
             `Created reminder "${input.name}" (id: ${id}) but could not attach the recurrence: ${(error as Error).message}`,
@@ -239,12 +238,12 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
     },
 
     async update({ listName, name, id, ...changes }) {
-      const { clause } = matchClause({ nameProperty: "name", name, id });
+      const clause = whoseClause({ nameProperty: "name", name, id });
       await run(reminderUpdateScript(listName, clause, changes));
     },
 
     async complete({ listName, name, id }) {
-      const { clause } = matchClause({ nameProperty: "name", name, id });
+      const clause = whoseClause({ nameProperty: "name", name, id });
 
       await run(
         `tell application "Reminders" to tell list ${quoted(listName)} to set completed of (first reminder whose ${clause}) to true`,
@@ -252,7 +251,7 @@ export function createReminders(run: RunScript = runAppleScript): Reminders {
     },
 
     async delete({ listName, name, id }) {
-      const { clause } = matchClause({ nameProperty: "name", name, id });
+      const clause = whoseClause({ nameProperty: "name", name, id });
 
       await run(`tell application "Reminders" to tell list ${quoted(listName)}
   ${deleteFirstMatching("reminder", clause)}
@@ -267,12 +266,12 @@ end tell`);
           run,
           "Reminders",
           `name of (every reminder whose name contains ${quoted(query)})`,
-          SLOW_QUERY_TIMEOUT_MS,
+          { timeoutMs: SLOW_QUERY_TIMEOUT_MS },
         );
       }
 
       return parseList(
-        await run(incompleteRemindersScript({ query }), SLOW_QUERY_TIMEOUT_MS),
+        await run(incompleteRemindersScript({ query }), { timeoutMs: SLOW_QUERY_TIMEOUT_MS }),
       );
     },
   };

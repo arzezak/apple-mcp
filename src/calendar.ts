@@ -1,11 +1,12 @@
 import {
   runAppleScript,
-  runNameList,
   quoted,
-  appleScriptDateStatements,
   SLOW_QUERY_TIMEOUT_MS,
   type RunScript,
 } from "./osascript.ts";
+import { runNameList } from "./lists.ts";
+import { appleScriptDateStatements } from "./dates.ts";
+import { eventSpecifier, requireEvent } from "./matching.ts";
 import { recurrenceRule } from "./recurrence.ts";
 import { eventKitEvents, type EventRecord, type ReadEvents } from "./eventkit.ts";
 import type {
@@ -84,18 +85,6 @@ tell application "Calendar"
 end tell`;
 }
 
-// `event id` resolves in ~0.3s where `first event whose uid is` scans the
-// whole calendar (~29s measured 2026-11-05).
-function eventSpecifier({ title, id }: { title?: string; id?: string }): string {
-  if ((title === undefined) === (id === undefined)) {
-    throw new Error("Provide exactly one of title or id.");
-  }
-
-  return id !== undefined
-    ? `event id ${quoted(id)}`
-    : `first event whose summary is ${quoted(title!)}`;
-}
-
 // Every `set` saves at once and Calendar rejects a start on or after the end,
 // so the order of the two date sets depends on the direction of the move.
 // `copy`, not `set`: AppleScript dates are shared by reference, so setting
@@ -135,10 +124,6 @@ function eventRescheduleStatements({
     end if`);
 
   return lines.join("\n    ");
-}
-
-function requireEvent(specifier: string): string {
-  return `if not (exists ${specifier}) then error "No matching event." number 1`;
 }
 
 function calendarUpdateEventScript(
@@ -186,15 +171,22 @@ export type Calendar = {
 
 export function createCalendar(
   run: RunScript = runAppleScript,
-  readEvents: ReadEvents = eventKitEvents(run),
-  now: () => Date = () => new Date(),
+  {
+    readEvents = eventKitEvents(run),
+    now = () => new Date(),
+  }: { readEvents?: ReadEvents; now?: () => Date } = {},
 ): Calendar {
-  async function eventLines(
-    calendar: string | undefined,
-    daysBack: number,
-    daysAhead: number,
-    query?: string,
-  ): Promise<string[]> {
+  async function eventLines({
+    calendar,
+    daysBack,
+    daysAhead,
+    query,
+  }: {
+    calendar?: string;
+    daysBack: number;
+    daysAhead: number;
+    query?: string;
+  }): Promise<string[]> {
     const today = now();
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysBack);
     const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysAhead, 0, 0, -1);
@@ -216,10 +208,10 @@ export function createCalendar(
     listCalendars: () => runNameList(run, "Calendar", "name of every calendar"),
 
     listEvents: ({ calendar, daysAhead = 1, daysBack = 0 }) =>
-      eventLines(calendar, daysBack, daysAhead),
+      eventLines({ calendar, daysBack, daysAhead }),
 
     searchEvents: ({ query, calendar, daysAhead = 30 }) =>
-      eventLines(calendar, 0, daysAhead, query),
+      eventLines({ calendar, daysBack: 0, daysAhead, query }),
 
     async createEvent({ recurrence, ...input }) {
       const rule = recurrence && recurrenceRule(recurrence);
@@ -230,7 +222,7 @@ export function createCalendar(
     async updateEvent({ calendar, title, id, ...changes }) {
       await run(
         calendarUpdateEventScript(calendar, eventSpecifier({ title, id }), changes),
-        SLOW_QUERY_TIMEOUT_MS,
+        { timeoutMs: SLOW_QUERY_TIMEOUT_MS },
       );
     },
 

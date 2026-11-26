@@ -87,7 +87,7 @@ JSON.stringify(
 export function eventKitEvents(run: RunScript): ReadEvents {
   return async (range) => {
     const rows: EventRow[] = JSON.parse(
-      await run(eventsScript(range), SLOW_QUERY_TIMEOUT_MS, "JavaScript"),
+      await run(eventsScript(range), { timeoutMs: SLOW_QUERY_TIMEOUT_MS, language: "JavaScript" }),
     );
 
     return rows.map((row) => ({

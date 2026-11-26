@@ -1,13 +1,11 @@
+import { runAppleScript, quoted, type RunScript } from "./osascript.ts";
 import {
-  runAppleScript,
   runNameList,
   parseList,
-  deleteFirstMatching,
-  quoted,
   joinLinefeedScript,
   scopeExpression,
-  type RunScript,
-} from "./osascript.ts";
+} from "./lists.ts";
+import { deleteFirstMatching } from "./matching.ts";
 import { markdownToHtml } from "./markdown.ts";
 import type {
   CreateNoteInput,

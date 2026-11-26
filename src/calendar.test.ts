@@ -29,14 +29,13 @@ describe("calendar.listEvents and searchEvents", () => {
   function calendarWith(events: EventRecord[]) {
     const ranges: EventRange[] = [];
 
-    const calendar = createCalendar(
-      recordingRun().run,
-      async (range) => {
+    const calendar = createCalendar(recordingRun().run, {
+      readEvents: async (range) => {
         ranges.push(range);
         return events;
       },
-      () => NOW,
-    );
+      now: () => NOW,
+    });
 
     return { calendar, ranges };
   }

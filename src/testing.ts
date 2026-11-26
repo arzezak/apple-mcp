@@ -8,9 +8,9 @@ export function recordingRun(output = ""): {
   const scripts: string[] = [];
   const languages: (ScriptLanguage | undefined)[] = [];
 
-  const run: RunScript = async (script, _timeoutMs, language) => {
+  const run: RunScript = async (script, options) => {
     scripts.push(script);
-    languages.push(language);
+    languages.push(options?.language);
     return output;
   };
 
