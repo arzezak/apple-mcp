@@ -54,12 +54,23 @@ export function createNotes(run: RunScript = runAppleScript): Notes {
       return parseList(await run(notesListScript(folder)));
     },
 
-    read({ name, html = true }) {
+    // Notes returns an empty body for a locked note instead of an error.
+    async read({ name, html = true }) {
       const property = html ? "body" : "plaintext";
+      const note = `first note whose name is ${quoted(name)}`;
+      const content = await run(`tell application "Notes" to ${property} of ${note}`);
 
-      return run(
-        `tell application "Notes" to ${property} of first note whose name is ${quoted(name)}`,
+      if (content !== "") return content;
+
+      const locked = await run(
+        `tell application "Notes" to password protected of ${note}`,
       );
+
+      if (locked === "true") {
+        throw new Error(`Note "${name}" is locked. Unlock it in Notes to read it.`);
+      }
+
+      return content;
     },
 
     async create({ title, body, folder }) {

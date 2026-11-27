@@ -72,6 +72,22 @@ describe("notes", () => {
     expect(scripts[0]).toContain("plaintext of first note");
   });
 
+  test("read reports a locked note instead of returning its empty body", async () => {
+    const run = async (script: string) =>
+      script.includes("password protected") ? "true" : "";
+
+    await expect(createNotes(run).read({ name: "Private" })).rejects.toThrow(
+      'Note "Private" is locked',
+    );
+  });
+
+  test("read returns an empty note that is not locked", async () => {
+    const run = async (script: string) =>
+      script.includes("password protected") ? "false" : "";
+
+    expect(await createNotes(run).read({ name: "Blank" })).toBe("");
+  });
+
   test("search scopes to a folder and body text", async () => {
     const { run, scripts } = recordingRun("Plan\nNotes, misc");
 
