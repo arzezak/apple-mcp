@@ -49,10 +49,18 @@ describe("eventKitReminders", () => {
       priority: 0,
       due: new Date(2026, 10, 26, 9, 30).getTime(),
       timed: true,
+      completed: null,
       id: "x-apple-reminder://ABC",
     };
 
-    const { run, languages } = recordingRun(JSON.stringify([row, { ...row, due: null, timed: false }]));
+    const completedRow = {
+      ...row,
+      due: null,
+      timed: false,
+      completed: new Date(2026, 10, 27, 10, 51).getTime(),
+    };
+
+    const { run, languages } = recordingRun(JSON.stringify([row, completedRow]));
 
     const reminders = await eventKitReminders(run)({ includeCompleted: false });
 
@@ -60,7 +68,7 @@ describe("eventKitReminders", () => {
 
     expect(reminders).toEqual([
       { ...row, due: new Date(2026, 10, 26, 9, 30) },
-      { ...row, due: null, timed: false },
+      { ...completedRow, completed: new Date(2026, 10, 27, 10, 51) },
     ]);
   });
 

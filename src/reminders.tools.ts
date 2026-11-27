@@ -29,7 +29,7 @@ export function registerRemindersTools(
     {
       title: "List Reminders",
       description:
-        "List reminders in a specific list. Returns name, due date, priority, notes, and id for each.",
+        "List reminders in a specific list. Returns name, due date, priority, notes, and id for each. A completed reminder also has its completion date.",
       inputSchema: listRemindersInput.shape,
     },
     async (input) => linesResult(await reminders.list(input), "No reminders found."),
@@ -97,7 +97,7 @@ export function registerRemindersTools(
     {
       title: "Search Reminders",
       description:
-        "Search for reminders by name across all lists. Returns only incomplete reminders by default, one line each with list name, due date, priority, notes, and id.",
+        "Search for reminders by name across all lists. Returns only incomplete reminders by default, one line each with list name, due date, priority, notes, and id. A completed reminder also has its completion date.",
       inputSchema: searchRemindersInput.shape,
     },
     async (input) => linesResult(await reminders.search(input), "No reminders found."),

@@ -104,6 +104,7 @@ export type ReminderRecord = {
   priority: number;
   due: Date | null;
   timed: boolean;
+  completed: Date | null;
   id: string;
 };
 
@@ -111,7 +112,10 @@ export type ReminderScope = { listName?: string; includeCompleted: boolean };
 
 export type ReadReminders = (scope: ReminderScope) => Promise<ReminderRecord[]>;
 
-type ReminderRow = Omit<ReminderRecord, "due"> & { due: number | null };
+type ReminderRow = Omit<ReminderRecord, "due" | "completed"> & {
+  due: number | null;
+  completed: number | null;
+};
 
 function remindersScript({ listName, includeCompleted }: ReminderScope): string {
   const predicate = includeCompleted
@@ -152,6 +156,7 @@ JSON.stringify(
   (ObjC.unwrap(fetched) || []).map((reminder) => {
     const due = reminder.dueDateComponents;
     const hasDue = !due.isNil();
+    const completionDate = reminder.completionDate;
 
     return {
       list: text(reminder.calendar.title),
@@ -160,6 +165,7 @@ JSON.stringify(
       priority: Number(reminder.priority),
       due: hasDue ? ObjC.unwrap($.NSCalendar.currentCalendar.dateFromComponents(due)).getTime() : null,
       timed: hasDue && Number(due.hour) < 24,
+      completed: completionDate.isNil() ? null : ObjC.unwrap(completionDate).getTime(),
       id: "x-apple-reminder://" + text(reminder.calendarItemIdentifier),
     };
   }),
@@ -176,6 +182,7 @@ export function eventKitReminders(run: RunScript): ReadReminders {
     return rows.map((row) => ({
       ...row,
       due: row.due === null ? null : new Date(row.due),
+      completed: row.completed === null ? null : new Date(row.completed),
     }));
   };
 }

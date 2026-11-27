@@ -38,6 +38,7 @@ function reminderLine(reminder: ReminderRecord, withList: boolean): string {
 
   if (reminder.priority !== 0) parts.push(`priority: ${reminder.priority}`);
   if (notes) parts.push(`notes: ${notes}`);
+  if (reminder.completed) parts.push(`completed: ${formatDateTime(reminder.completed)}`);
   parts.push(`id: ${reminder.id}`);
 
   return parts.join(" | ");

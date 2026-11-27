@@ -176,6 +176,7 @@ describe("reminders.list and search", () => {
       priority: 0,
       due: null,
       timed: false,
+      completed: null,
       id: "x-apple-reminder://ABC",
       ...overrides,
     };
@@ -210,6 +211,20 @@ describe("reminders.list and search", () => {
 
     expect(scopes).toEqual([{ listName: "Inbox", includeCompleted: true }]);
     expect(lines).toEqual([]);
+  });
+
+  test("shows when a reminder was completed and leaves an open one's line as it was", async () => {
+    const { reminders } = remindersWith([
+      reminderRecord({ completed: new Date(2026, 10, 27, 10, 51) }),
+      reminderRecord({ name: "Call Sam" }),
+    ]);
+
+    const lines = await reminders.list({ listName: "Inbox", includeCompleted: true });
+
+    expect(lines).toEqual([
+      "- Pay rent | completed: Friday, November 27, 2026 at 10:51:00 AM | id: x-apple-reminder://ABC",
+      "- Call Sam | id: x-apple-reminder://ABC",
+    ]);
   });
 
   test("shows a timed due date with its time and an all-day one without", async () => {

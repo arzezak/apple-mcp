@@ -417,6 +417,7 @@ end tell`),
     });
 
     expect(withCompleted).toContain(name);
+    expect(withCompleted.split("\n").find((line) => line.includes(name))).toContain("| completed: ");
 
     await call(handlers, "reminders_delete", {
       listName: TEST_CONTAINER_NAME,
